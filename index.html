@@ -1310,6 +1310,13 @@
             fill: #888;
         }
 
+        /* Slightly enlarge image and cart icons for visual consistency */
+        #image-recognition-btn svg,
+        #gift-btn svg {
+            width: 30px;
+            height: 30px;
+        }
+
         #sticker-modal, #chat-expansion-panel {
             position: absolute;
             bottom: 0;
@@ -3918,6 +3925,115 @@ border-top: none;
 }
 
     </style>
+    <style>
+/* --- 表情包分类样式 --- */
+#sticker-modal .header {
+    padding: 12px 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+    position: relative;
+}
+
+#sticker-modal .panel-btn {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 5px;
+}
+#sticker-modal .title {
+    font-weight: 600;
+    color: var(--text-color);
+    font-size: 16px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#sticker-category-tabs {
+    display: flex;
+    overflow-x: auto;
+    padding: 0 15px;
+    border-bottom: 1px solid #eee;
+    gap: 18px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+#sticker-category-tabs::-webkit-scrollbar {
+    display: none;
+}
+#sticker-category-tabs .tab-item {
+    padding: 10px 0 8px 0;
+    font-size: 15px;
+    color: #888;
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+#sticker-category-tabs .tab-item.active {
+    color: var(--primary-color);
+    font-weight: 600;
+    border-bottom-color: var(--primary-color);
+}
+
+#sticker-search-container {
+    padding: 10px 15px;
+}
+#sticker-search-input {
+    width: 100%;
+    padding: 10px 15px;
+    border-radius: 10px;
+    border: none;
+    background: #f0f0f0;
+    font-size: 14px;
+    -webkit-appearance: none;
+}
+#sticker-search-input:focus {
+    outline: none;
+    background: #e9e9e9;
+}
+
+#existing-categories-list .category-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+#existing-categories-list .category-item:hover {
+    background-color: #f9f9f9;
+}
+#existing-categories-list .category-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: #333;
+}
+#existing-categories-list .category-actions {
+    display: flex;
+    gap: 8px;
+}
+#existing-categories-list .category-actions button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--primary-color);
+    padding: 4px;
+}
+#existing-categories-list .category-actions button.danger {
+    color: #ef5350;
+}
+#existing-categories-list .category-item[data-category="全部"] .category-actions,
+#existing-categories-list .category-item[data-category="未分类"] .category-actions {
+    display: none;
+}
+    </style>
     <style id="global-css-style"></style>
     <style>
 /* --- 存储分析详情列表样式 --- */
@@ -4744,9 +4860,9 @@ border-top: none;
                         <path d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z"/>
                     </svg>
                 </button>
-                <button class="sticker-bar-btn" id="image-recognition-btn">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M21.58,16.09L19.66,18L18.24,16.58L21,13.83C21.39,13.44 22,13.44 22.39,13.83L23.17,14.61C23.56,15 23.56,15.64 23.17,16.03L21.58,17.62M20.13,12.25L18.71,13.66L20.41,15.36L21.83,13.94L20.13,12.25M5.93,19H5C3.9,19 3,18.1 3,17V5C3,3.9 3.9,3 5,3H19C20.1,3 21,3.9 21,5V11.08L19,13.08V5H5V17H5.93L13.5,9.43L16.29,12.21L12.08,16.42L5.93,19Z"/>
+                <button class="sticker-bar-btn" id="image-recognition-btn" title="图片">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M21 19V5H3v14h18M5 7h14v10H5V7m3.5 1.5A1.5 1.5 0 1 1 7 10a1.5 1.5 0 0 1 1.5-1.5M19 17l-4.5-5.5L11 16l-2-2.5L5 17"/>
                     </svg>
                 </button>
                 <button class="sticker-bar-btn" id="voice-message-btn">
@@ -4754,14 +4870,15 @@ border-top: none;
                         <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
                     </svg>
                 </button>
-                <button class="sticker-bar-btn" id="wallet-btn">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 18H4V8H20V18ZM4 6H20V6H4Z"/>
+                <button class="sticker-bar-btn" id="wallet-btn" title="转账">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4M20 18H4V8H20V18M16 12.5A1.5 1.5 0 1 0 16 15.5A1.5 1.5 0 0 0 16 12.5Z"/>
                     </svg>
                 </button>
-                <button class="sticker-bar-btn" id="gift-btn">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M20,8L12,13L4,8V6H20M20,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V6A2,2 0 0,0 20,4M12.5,18C12.5,17.29 12.17,16.65 11.64,16.27C12.17,15.89 12.5,15.26 12.5,14.55C12.5,13.6 11.83,12.79 11,12.58V12H13V10H11V8H13V6H11V5C11,4.45 10.55,4 10,4H8C7.45,4 7,4.45 7,5V6H9V8H7V10H9V12H7V12.58C6.17,12.79 5.5,13.6 5.5,14.55C5.5,15.26 5.83,15.89 6.36,16.27C5.83,16.65 5.5,17.29 5.5,18H12.5Z"/>
+                <button class="sticker-bar-btn" id="gift-btn" title="礼物">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7.16 14h8.53a2 2 0 0 0 1.93-1.5L19 6H6.21L5.27 4H2v2h2l3.6 7.59L6.25 17H19v-2H7.65l-.49-1z"/>
+                        <path d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
                     </svg>
                 </button>
                 <!-- NEW: Time Skip Button -->
@@ -4803,12 +4920,18 @@ border-top: none;
         </div>
         <div id="sticker-modal">
             <div class="header">
-                <span>我的表情</span>
+                <button class="panel-btn" id="close-sticker-panel-btn">取消</button>
+                <span class="title">我的表情</span>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-neutral btn-small" id="manage-stickers-btn">管理</button>
-                    <button class="btn btn-primary btn-small" id="batch-add-sticker-btn" style="background-color: var(--accent-color);">批量导入</button>
-                    <button class="btn btn-primary btn-small" id="add-new-sticker-btn">添加新表情</button>
+                    <button class="panel-btn" id="sticker-category-manage-btn">分类</button>
+                    <button class="panel-btn" id="manage-stickers-btn">管理</button>
+                    <button class="panel-btn" id="batch-add-sticker-btn">批量</button>
+                    <button class="panel-btn" id="add-new-sticker-btn">上传</button>
                 </div>
+            </div>
+            <div id="sticker-category-tabs"></div>
+            <div id="sticker-search-container">
+                <input type="search" id="sticker-search-input" placeholder="搜索表情名称...">
             </div>
             <div class="sticker-grid" id="sticker-grid-container"></div>
             <div id="sticker-manage-bar" style="display: none; padding: 10px; border-top: 1px solid #eee; background: #f7f7f7;">
@@ -4822,6 +4945,22 @@ border-top: none;
             </div>
         </div>
     </div>
+    <div id="sticker-category-manager-modal" class="modal-overlay">
+        <div class="modal-window" style="max-width: 340px;">
+            <h3 style="text-align: center; color: var(--primary-color);">管理表情分类</h3>
+            <form id="add-category-form" class="form-group">
+                <label for="new-category-name-input">新建分类</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="new-category-name-input" class="form-group" placeholder="输入分类名..." style="flex-grow: 1; margin-bottom: 0;">
+                    <button type="submit" id="add-new-category-btn" class="btn btn-primary" style="width: auto; padding: 10px 15px; margin-bottom: 0; flex-shrink: 0;">添加</button>
+                </div>
+            </form>
+            <hr style="opacity: 0.2; margin: 20px 0;">
+            <div id="existing-categories-list" style="display: flex; flex-direction: column; gap: 5px; max-height: 40vh; overflow-y: auto;"></div>
+            <button id="close-category-manager-btn" class="btn btn-neutral" style="margin-top: 20px;">完成</button>
+        </div>
+    </div>
+
     <div id="world-book-screen" class="screen">
         <header class="app-header">
             <button class="back-btn" data-target="home-screen">‹</button>
@@ -4936,6 +5075,10 @@ border-top: none;
                 <div class="form-group"><label for="sticker-name">表情名称</label><input type="text" id="sticker-name"
                                                                                          placeholder="如：开心" required>
                 </div>
+                <div class="form-group">
+                    <label for="sticker-category-select">选择分类</label>
+                    <select id="sticker-category-select" class="form-group"></select>
+                </div>
                 <div class="form-group"><label for="sticker-url-input">表情URL</label><input type="url"
                                                                                              id="sticker-url-input"
                                                                                              placeholder="粘贴图片URL">
@@ -4963,6 +5106,10 @@ border-top: none;
                 <div class="form-group">
                     <label for="sticker-urls-textarea">数据格式：名称:URL (英文冒号，每行一个)</label>
                     <textarea id="sticker-urls-textarea" rows="8" placeholder="例如：&#10;开心:https://example.com/happy.gif&#10;哭泣:https://example.com/cry.png"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="batch-sticker-category-select">选择分类</label>
+                    <select id="batch-sticker-category-select" class="form-group"></select>
                 </div>
                 <button type="submit" class="btn btn-primary">开始导入</button>
             </form>
@@ -6473,7 +6620,7 @@ border-top: none;
         const simulatedMemos = [];
 
         const globalSettingKeys = [
-            'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons',
+            'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons', 'stickerCategories',
             'apiPresets', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
             'globalCssPresets', 'homeSignature', 'forumPosts', 'forumBindings', 'pomodoroTasks', 'pomodoroSettings', 'insWidgetSettings', 'homeWidgetSettings'
         ];
@@ -6676,7 +6823,7 @@ border-top: none;
             characters: '&id',
             groups: '&id',
             worldBooks: '&id',
-            myStickers: '&id',
+            myStickers: '&id, category',
             globalSettings: 'key'
         }).upgrade(async tx => {
             console.log("Upgrading database to version 2...");
@@ -6764,6 +6911,7 @@ border-top: none;
                     homeScreenMode: 'night',
                     fontUrl: '',
                     customIcons: {},
+                    stickerCategories: ['全部', '未分类'],
                     apiPresets: [],
                     bubbleCssPresets: [],
                     myPersonaPresets: [],
@@ -13390,6 +13538,26 @@ return `${seconds}秒`;
             });
         }
 
+        // Populate category selects in upload/batch modals
+        function populateCategorySelects() {
+            const selects = [
+                document.getElementById('sticker-category-select'),
+                document.getElementById('batch-sticker-category-select')
+            ];
+            if (!db.stickerCategories) db.stickerCategories = ['全部', '未分类'];
+            selects.forEach(select => {
+                if (!select) return;
+                select.innerHTML = '';
+                db.stickerCategories.filter(cat => cat !== '全部').forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category;
+                    select.appendChild(option);
+                });
+                select.value = '未分类';
+            });
+        }
+
         async function setupStickerSystem() {
             const batchAddStickerBtn = document.getElementById('batch-add-sticker-btn');
             const batchAddStickerModal = document.getElementById('batch-add-sticker-modal');
@@ -13444,8 +13612,9 @@ return `${seconds}秒`;
             }
 
             batchAddStickerBtn.addEventListener('click', () => {
+                if (typeof populateCategorySelects === 'function') populateCategorySelects();
                 batchAddStickerModal.classList.add('visible');
-                stickerUrlsTextarea.value = ''; // 清空文本域
+                stickerUrlsTextarea.value = '';
             });
 
             batchAddStickerForm.addEventListener('submit', async (e) => {
@@ -13486,11 +13655,14 @@ return `${seconds}秒`;
                 }
 
                 if (newStickers.length > 0) {
-                    db.myStickers.push(...newStickers); // 一次性推入所有新表情
+                    const catSelect = document.getElementById('batch-sticker-category-select');
+                    const category = catSelect ? catSelect.value : '未分类';
+                    newStickers.forEach(s => s.category = category);
+                    db.myStickers.push(...newStickers);
                     await saveData();
                     renderStickerGrid();
                     batchAddStickerModal.classList.remove('visible');
-                    showToast(`成功导入 ${newStickers.length} 个新表情！`);
+                    showToast(`成功导入 ${newStickers.length} 个新表情到 "${category}"`);
                 } else {
                     showToast('未找到有效的表情包数据，请检查格式');
                 }
@@ -13504,6 +13676,10 @@ return `${seconds}秒`;
                 }
                 stickerModal.classList.toggle('visible');
                 if (stickerModal.classList.contains('visible')) {
+                    currentStickerCategory = '全部';
+                    currentStickerSearchTerm = '';
+                    const searchInput = document.getElementById('sticker-search-input');
+                    if (searchInput) searchInput.value = '';
                     renderStickerGrid();
                 }
             });
@@ -13521,10 +13697,12 @@ return `${seconds}秒`;
                 const id = stickerEditIdInput.value;
                 const previewImg = stickerPreview.querySelector('img');
                 const data = previewImg ? previewImg.src : null;
+                const catSelect = document.getElementById('sticker-category-select');
+                const category = catSelect ? catSelect.value : '未分类';
                 if (!name || !data) {
                     return showToast('请填写表情名称并提供图片');
                 }
-                const stickerData = {name, data};
+                const stickerData = {name, data, category};
                 if (id) {
                     const index = db.myStickers.findIndex(s => s.id === id);
                     if (index > -1) {
@@ -13593,13 +13771,51 @@ return `${seconds}秒`;
             });
         }
 
+        // --- Sticker categories/search state ---
+        let currentStickerCategory = '全部';
+        let currentStickerSearchTerm = '';
+
+        function renderStickerTabs() {
+            const tabsContainer = document.getElementById('sticker-category-tabs');
+            if (!tabsContainer) return;
+            tabsContainer.innerHTML = '';
+            if (!db.stickerCategories || db.stickerCategories.length === 0) {
+                db.stickerCategories = ['全部', '未分类'];
+            }
+            db.stickerCategories.forEach(category => {
+                const tab = document.createElement('div');
+                tab.className = 'tab-item';
+                tab.textContent = category;
+                tab.dataset.category = category;
+                if (category === currentStickerCategory) tab.classList.add('active');
+                tab.addEventListener('click', () => {
+                    currentStickerCategory = category;
+                    renderStickerGrid();
+                });
+                tabsContainer.appendChild(tab);
+            });
+        }
+
         function renderStickerGrid() {
+            // render tabs every time to refresh active state
+            renderStickerTabs();
             stickerGridContainer.innerHTML = '';
-            if (db.myStickers.length === 0) {
-                stickerGridContainer.innerHTML = '<p style="color:#aaa; text-align:center;">还没有表情包，快去添加吧！</p>';
+            const lowerSearch = (currentStickerSearchTerm || '').toLowerCase();
+            const filtered = (db.myStickers || []).filter(sticker => {
+                const category = sticker.category || '未分类';
+                const catOk = (currentStickerCategory === '全部') || (category === currentStickerCategory);
+                const nameOk = (sticker.name || '').toLowerCase().includes(lowerSearch);
+                return catOk && nameOk;
+            });
+
+            if (filtered.length === 0) {
+                let placeholderText = '这个分类下还没有表情哦~';
+                if (currentStickerSearchTerm) placeholderText = '未找到匹配的表情';
+                else if ((currentStickerCategory === '全部') && (!db.myStickers || db.myStickers.length === 0)) placeholderText = '还没有表情包，快去上传吧！';
+                stickerGridContainer.innerHTML = `<p style="color:#aaa; text-align:center; grid-column: 1 / -1;">${placeholderText}</p>`;
                 return;
             }
-            db.myStickers.forEach(sticker => {
+            filtered.forEach(sticker => {
                 const item = document.createElement('div');
                 item.className = 'sticker-item';
                 item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${sticker.name}</span>`;

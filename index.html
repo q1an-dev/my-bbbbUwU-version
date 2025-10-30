@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/dompurify@2.3.8/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="manifest" href="manifest.json">
 
     <style>
@@ -5111,6 +5112,29 @@ border-top: none;
                 </div>
                 <div class="form-group"><label for="setting-chat-bg-upload" class="btn btn-primary">更换聊天背景</label><input
                         type="file" id="setting-chat-bg-upload" accept="image/*" style="display:none;"></div>
+                <div class="form-group" id="nai-character-settings-group">
+        <hr style="opacity: 0.2; margin: 20px 0;">
+        <label style="font-weight: 600; color: var(--accent-color);">NAI出图设置</label>
+        <p style="font-size: 12px; color: #666; margin-top: 5px;">
+            为当前角色配置专属的NovelAI出图提示词
+        </p>
+
+        <div style="margin-top: 15px;">
+            <label style="font-weight: 500;">提示词来源</label>
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="nai-prompt-source" value="system" checked>
+                    <span>使用系统设置</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="nai-prompt-source" value="character">
+                    <span>使用当前角色配置</span>
+                </label>
+            </div>
+        </div>
+
+        <button type="button" id="character-nai-prompts-btn" class="btn btn-secondary" style="width: 100%; margin-top: 15px;">配置角色专属提示词</button> </div>
+
                 <button type="submit" class="btn btn-primary">保存设置</button>
             </form>
             <hr style="border:none; border-top:1px solid #eee; margin: 20px 0;">
@@ -5220,6 +5244,28 @@ border-top: none;
                                                                                                   accept="image/*"
                                                                                                   style="display:none;">
                 </div>
+                <div class="form-group" id="group-nai-settings-group">
+        <hr style="opacity: 0.2; margin: 20px 0;">
+        <label style="font-weight: 600; color: var(--accent-color);">NAI出图设置</label>
+        <p style="font-size: 12px; color: #666; margin-top: 5px;">
+            为当前群聊配置专属的NovelAI出图提示词 (对所有AI成员生效)
+        </p>
+
+        <div style="margin-top: 15px;">
+            <label style="font-weight: 500;">提示词来源</label>
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="group-nai-prompt-source" value="system" checked>
+                    <span>使用系统设置</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="group-nai-prompt-source" value="character">
+                    <span>使用当前群聊配置</span>
+                </label>
+            </div>
+        </div>
+
+        <button type="button" id="group-character-nai-prompts-btn" class="btn btn-secondary" style="width: 100%; margin-top: 15px;">配置群聊专属提示词</button> </div>
                 <button type="submit" class="btn btn-primary">保存设置</button>
             </form>
             <hr style="border:none; border-top:1px solid #eee; margin: 20px 0;">
@@ -5963,6 +6009,159 @@ border-top: none;
             top: 2px;
             color: var(--accent-color);
         }
+
+        /* --- NovelAI 相关样式 (v2 - UI对齐修复) --- */
+
+        /* API 设置页面的开关样式 (与您现有的 time-perception-switch 样式对齐) */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+            flex-shrink: 0; /* 防止被压缩 */
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-switch .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 26px;
+        }
+        .toggle-switch .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+        .toggle-switch input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        /* API Key 输入框的显隐按钮 */
+        #novelai-key-toggle {
+            position: absolute;
+            right: 12px; /* 调整位置以匹配 form-group 的 padding */
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            user-select: none;
+            font-size: 18px;
+            color: #888;
+            z-index: 2; /* 确保在输入框之上 */
+        }
+
+        /* * 弹窗 UI 结构修复：
+         * 移除 .modal-header, .modal-body, .modal-footer 的特定样式
+         * 弹窗内容现在直接放在 .modal-window 中
+        */
+
+        /* 弹窗内的复选框和标签 */
+        .nai-modal-content .form-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .nai-modal-content .form-group small {
+            font-size: 12px;
+            color: #666;
+            display: block;
+            margin-top: 5px;
+        }
+
+        /* 弹窗内的关闭按钮 (匹配 index.html 弹窗的关闭按钮) */
+        .nai-modal-close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+            line-height: 1;
+            z-index: 10;
+        }
+        .nai-modal-close-btn:hover {
+            color: #333;
+        }
+
+        /* 弹窗内容滚动区域 */
+        .nai-modal-scrollable-content {
+            max-height: 65vh; /* 限制内容最大高度 */
+            overflow-y: auto; /* 超出时滚动 */
+            padding: 15px 5px 0 5px; /* 顶部留出空间，左右微调 */
+            margin: 0 -5px; /* 抵消内边距，使滚动条贴边 */
+        }
+
+        /* 测试弹窗图片预览 */
+        #nai-result-image {
+            max-width: 100%;
+            max-height: 60vh;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            object-fit: contain;
+        }
+
+        /* 角色/群聊设置侧边栏单选按钮 */
+        #nai-character-settings-group input[type="radio"],
+        #group-nai-settings-group input[type="radio"] {
+            width: auto;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        #nai-character-settings-group label,
+        #group-nai-settings-group label {
+            margin-bottom: 0;
+        }
+
+        /* --- NovelAI 修复 (v3) --- */
+
+        /* 修复：确保从侧边栏打开的弹窗层级高于侧边栏 (z-index: 101) */
+        #character-nai-prompts-modal {
+            z-index: 102;
+        }
+
+        /* 修复：设置弹窗中的复选框布局 */
+        .nai-settings-checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px 0;
+        }
+        .nai-settings-checkbox-group label {
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-bottom: 0;
+        }
+        .nai-settings-checkbox-group .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        .nai-settings-checkbox-group .checkbox-container span {
+            font-size: 14px;
+            color: #333;
+        }
+        .nai-settings-checkbox-group .checkbox-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+        }
     </style>
 
 <script>
@@ -6103,6 +6302,71 @@ border-top: none;
         document.getElementById('api-settings-screen').innerHTML = `<header class="app-header"><button class="back-btn" data-target="home-screen">‹</button><div class="title-container"><h1 class="title">API 设置</h1></div><div class="placeholder"></div></header><main class="content"><form id="api-form"><div class="form-group"><label for="api-provider">API 服务商</label><select id="api-provider" name="provider"><option value="newapi">NewAPI (自定义)</option><option value="deepseek">DeepSeek</option><option value="claude">Claude</option><option value="gemini">Gemini</option></select></div><div class="form-group"><label for="api-url">API 地址（后缀不用添加/v1）</label><input type="url" id="api-url" name="url" placeholder="选择服务商可自动填写" required></div><div class="form-group"><label for="api-key">密钥 (Key)</label><input type="password" id="api-key" name="key" placeholder="请输入你的API密钥" required></div><button type="button" class="btn btn-secondary" id="fetch-models-btn"><span class="btn-text">点击拉取模型</span><div class="spinner"></div></button><div class="form-group"><label for="api-model">选择模型</label><select id="api-model" name="model" required><option value="">请先拉取模型列表</option></select></div><div class.blade.php="form-group" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #fce4ec; border-radius: 10px; background-color: #fff8fa;">
     <label for="time-perception-switch" style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">时间感知加强</label>
     <input type="checkbox" id="time-perception-switch" style="width: auto; height: 20px; width: 20px;">
+</div>
+<hr style="margin:20px 0; opacity:.3">
+<div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+    <div style="flex-grow: 1;">
+        <label for="novelai-switch" style="margin-bottom: 0; display: block; color: var(--secondary-color); font-weight: 600;">
+            启用 NovelAI 图像生成
+        </label>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 5px;">
+            开启后可使用NovelAI官方API生成高质量动漫风格图像（必开🔮）
+        </p>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 5px;">
+            1. 三击下载图片，下面可测试模型或关键词画师串
+        </p>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 5px;">
+            2. 429是novel的访问频繁错误，等待几秒重新即可
+        </p>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 5px;">
+            3. 403是多人共号限制，限制oplus免费出小图但可扣点数
+        </p>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 5px;">
+            4. 403也会因为没开🔮报错，实在不行可更换出图尺寸
+        </p>
+        <p style="font-size: 12px; font-weight: normal; color: #666; margin-top: 5px; margin-bottom: 0;">
+            5. 401是key没权限，检查key是否正确
+        </p>
+    </div>
+    <label class="toggle-switch" style="margin-top: 5px;">
+        <input type="checkbox" id="novelai-switch">
+        <span class="slider"></span>
+    </label>
+</div>
+
+<div id="novelai-details" style="display: none;">
+    <div class="form-group">
+        <label for="novelai-model">NovelAI 模型</label>
+        <select id="novelai-model" name="novelai_model" class="form-group">
+            <option value="nai-diffusion-4-curated-preview">NAI Diffusion V4.5 Curated (精选版无nsfw)</option>
+            <option value="nai-diffusion-4-5-full">NAI Diffusion V4.5 Full（完整版含nsfw）</option>
+            <option value="nai-diffusion-3">NAI Diffusion Anime V3（旧版）</option>
+            <option value="nai-diffusion-furry-3">NAI Diffusion Furry V3（旧旧版）</option>
+        </select>
+        <p style="font-size: 12px; color: #666; margin-top: 5px;">
+            💡 必须有oplus订阅的apikey才可以使用！
+        </p>
+    </div>
+
+    <div class="form-group">
+        <label for="novelai-api-key">NovelAI API Key</label>
+        <div class="form-group" style="position: relative; margin-bottom: 0;">
+            <input type="password" id="novelai-api-key" name="novelai_api_key" placeholder="pst-xxxxxxxxxxxxxxxx" style="padding-right: 40px;">
+            <span id="novelai-key-toggle">🧐</span>
+        </div>
+        <p style="font-size: 12px; color: #666; margin-top: 5px;">
+            💡 在 <a href="https://novelai.net" target="_blank" style="color: var(--primary-color);">NovelAI官网</a> 获取API Key
+        </p>
+    </div>
+
+    <div style="display: flex; gap: 10px; margin-top: 15px; align-items: flex-end; margin-bottom: 15px;">
+        <button type="button" id="novelai-settings-btn" class="btn btn-neutral" style="flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; margin-bottom: 0;">
+            ⚙️ 生成设置
+        </button>
+        <button type="button" id="novelai-test-btn" class="btn btn-secondary" style="flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; margin-bottom: 0;">
+            🧪 测试生成
+        </button>
+    </div>
 </div>
 <button type="submit" class="btn btn-primary" id="save-btn"><span class="btn-text">保 存</span><div class="spinner"></div></button></form><div class="api-presets-embedded" style="margin-top:12px;"><div id="api-presets-control" style="margin:12px 0;padding:12px;border-radius:8px;border:1px solid var(--border-color, #eee);background:var(--panel-bg, #fff);box-shadow:var(--panel-shadow, none);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><label style="min-width:86px;color:var(--muted,#666);">API 预设：</label><select id="api-preset-select" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd;"><option value="">— 选择 API 预设 —</option></select><button id="api-apply-preset" class="btn btn-primary" style="margin-left:8px;padding:6px 10px;">应用</button></div><div style="display:flex;gap:8px;align-items:center;"><button id="api-save-preset" class="btn" style="padding:6px 10px;">另存为</button><button id="api-manage-presets" class="btn" style="padding:6px 10px;">管理</button><div style="flex:1"></div><button id="api-import-presets" class="btn" style="padding:6px 10px;">导入</button><button id="api-export-presets" class="btn" style="padding:6px 10px;">导出</button></div></div><div id="api-presets-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;align-items:center;justify-content:center;"><div style="width:640px;max-width:94%;background:var(--panel-bg,#fff);padding:16px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);"><h3 style="margin:0 0 12px 0;">API 预设管理</h3><div id="api-presets-list" style="max-height:360px;overflow:auto;border:1px solid #f0f0f0;padding:8px;border-radius:6px;"></div><div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;"><button id="api-close-modal" class="btn btn-primary">关闭</button></div></div></div></div></main>`;
         document.getElementById('wallpaper-screen').innerHTML = `<header class="app-header"><button class="back-btn" data-target="home-screen">‹</button><div class="title-container"><h1 class="title">更换壁纸</h1></div><div class="placeholder"></div></header><main class="content"><div class="wallpaper-preview" id="wallpaper-preview"><span>当前壁纸预览</span></div><input type="file" id="wallpaper-upload" accept="image/*" style="display: none;"><label for="wallpaper-upload" class="btn btn-primary">从相册选择新壁纸</label></main>`;
@@ -10611,11 +10875,18 @@ border-top: none;
                         const transferRegex = /\[.*?的转账：.*?元.*?\]|\[.*?给你转账：.*?元.*?\]|\[.*?向.*?转账：.*?元.*?\]/;
                         const stickerRegex = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/;
                         const giftRegex = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/;
-
-
+                        // ▼▼▼ 新增 NAI 预览规则 ▼▼▼
+                        const naiRegex = /\[.*?的消息：NAI 正在作画中... 🎨\]/;
+                        // ▲▲▲ 新增结束 ▲▲▲
 
                         if (giftRegex.test(lastMsg.content)) {
                             lastMessageText = '[礼物]';
+                        // ▼▼▼ 新增 NAI 渲染规则 ▼▼▼
+                        } else if (lastMsg.type === 'naiimag') {
+                            lastMessageText = '[NovelAI图片]';
+                        } else if (naiRegex.test(lastMsg.content)) {
+                            lastMessageText = 'NAI 正在作画中... 🎨';
+                        // ▲▲▲ 新增结束 ▲▲▲
                         } else if (stickerRegex.test(lastMsg.content)) {
                             lastMessageText = '[表情包]';
                         } else if (voiceRegex.test(lastMsg.content)) {
@@ -11302,6 +11573,30 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     detailsDiv.classList.toggle('active');
                 });
 
+            } else if (message.type === 'naiimag') {
+                // ▼▼▼ 新增：NovelAI 图片渲染逻辑 ▼▼▼
+                // (来自 nai出图整体.html 第20部分)
+
+                // bubbleElement 在这里是消息的 *主要内容*
+                // 我们不再创建 .message-bubble，而是创建 .image-bubble
+                bubbleElement = document.createElement('div');
+                bubbleElement.className = 'image-bubble';
+                // 确保 NAI 图片也使用圆角和阴影样式
+                bubbleElement.style.borderRadius = 'var(--border-radius)';
+                bubbleElement.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+
+                // 添加 naiimag-image 类用于三击下载
+                bubbleElement.innerHTML = `<img src="${message.imageUrl}" class="naiimag-image" alt="NovelAI图片分享" loading="lazy" onerror="this.src='https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; this.alt='图片加载失败';" title="${message.fullPrompt || message.prompt || 'NovelAI生成'}">`;
+
+                // 同样应用 sent/received 圆角
+                if (isSent) {
+                    bubbleElement.style.borderBottomRightRadius = '5px';
+                } else {
+                    bubbleElement.style.borderBottomLeftRadius = '5px';
+                }
+
+                // ▲▲▲ NovelAI 图片渲染逻辑结束 ▲▲▲
+
             } else if ((isSent && sentStickerMatch && stickerData) || (!isSent && receivedStickerMatch)) {
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'image-bubble';
@@ -11657,9 +11952,108 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         }
 
         async function sendMessage() {
-    const text = messageInput.value.trim();
-    if (!text || isGenerating) return;
-    messageInput.value = ''; // Clear input immediately for better UX
+            // ▼▼▼ 新增：NAI 生图命令拦截 ▼▼▼
+            const textInput = document.getElementById('message-input');
+            const inputText = textInput.value.trim();
+            const naiCommandMatch = inputText.match(/^(!nai|!生图)\s+(.+)/);
+
+            if (naiCommandMatch && localStorage.getItem('novelai-enabled') === 'true') {
+                const userPrompt = naiCommandMatch[2].trim();
+                if (!userPrompt) return;
+
+                textInput.value = ''; // 立即清空输入框
+                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+
+                // 1. 先发送一个"正在作画"的提示消息
+                const tempMessageId = `msg_nai_pending_${Date.now()}`;
+                const tempMessage = {
+                    id: tempMessageId,
+                    role: 'assistant',
+                    content: `[${chat.realName || chat.name}的消息：NAI 正在作画中... 🎨]`,
+                    parts: [{type: 'text', text: `[${chat.realName || chat.name}的消息：NAI 正在作画中... 🎨]`}],
+                    timestamp: Date.now(),
+                    senderId: (currentChatType === 'group') ? chat.members[0]?.id : undefined // 临时指定一个发送者
+                };
+
+                chat.history.push(tempMessage);
+                addMessageBubble(tempMessage, currentChatId, currentChatType);
+                await saveData();
+                renderChatList();
+
+                try {
+                    // 2. 调用 NAI 生成函数
+                    const imageDataUrl = await generateNovelAIImageForChat(userPrompt, currentChatId, currentChatType);
+
+                    // 3. 创建 NAI 消息
+                    const naiMessage = {
+                        id: `msg_nai_${Date.now()}`,
+                        role: 'assistant',
+                        type: 'naiimag', // ★★★ 关键类型
+                        content: userPrompt, // 保留提示词作为描述
+                        imageUrl: imageDataUrl, // 图像的 Data URL
+                        fullPrompt: userPrompt, // (可选) 存储完整提示词
+                        timestamp: Date.now()
+                    };
+
+                    if (currentChatType === 'group') {
+                        // 在群聊中，需要指定一个发送者
+                        // 随机选择一个AI成员作为发送者
+                        const aiMembers = chat.members;
+                        const randomSender = aiMembers[Math.floor(Math.random() * aiMembers.length)];
+                        naiMessage.senderId = randomSender.id;
+                        // 更新内容以匹配群聊格式
+                        naiMessage.content = `[${randomSender.groupNickname}的消息：${userPrompt}]`;
+                    }
+
+                    // 4. 替换掉"正在作画"的消息
+                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                    if (tempMsgIndex > -1) {
+                        chat.history.splice(tempMsgIndex, 1, naiMessage); // 替换
+                    } else {
+                        chat.history.push(naiMessage); // 备用方案
+                    }
+
+                    // 5. 重新渲染
+                    currentPage = 1;
+                    renderMessages(false, true);
+
+                } catch (error) {
+                    // 6. 处理失败
+                    console.error('NAI 聊天作画失败:', error);
+                    const errorMsg = `[${chat.realName || chat.name}的消息：作画失败 😥: ${error.message}]`;
+
+                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                    if (tempMsgIndex > -1) {
+                        // 更新临时消息为错误消息
+                        chat.history[tempMsgIndex].content = errorMsg;
+                        chat.history[tempMsgIndex].parts = [{type: 'text', text: errorMsg}];
+                        // 重新渲染
+                        currentPage = 1;
+                        renderMessages(false, true);
+                    } else {
+                        // 如果临时消息找不到了，就发一条新的错误消息
+                        addMessageBubble({
+                            id: `msg_nai_error_${Date.now()}`,
+                            role: 'assistant',
+                            content: errorMsg,
+                            parts: [{type: 'text', text: errorMsg}],
+                            timestamp: Date.now(),
+                            senderId: tempMessage.senderId
+                        }, currentChatId, currentChatType);
+                    }
+                } finally {
+                    await saveData();
+                    renderChatList();
+                }
+
+                return; // ★★★ 拦截默认的 sendMessage 流程
+            }
+            // ▲▲▲ NAI 生图命令拦截结束 ▲▲▲
+
+            // ... (继续原有的 sendMessage 函数)
+            const text = messageInput.value.trim(); // 确保重新获取 text
+            if (!text || isGenerating) return;
+            messageInput.value = ''; // Clear input immediately for better UX
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
 
     // --- 时间感知功能注入点 开始 ---
@@ -12436,6 +12830,21 @@ return `${seconds}秒`;
            }
 
             prompt += `13. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
+            // ▼▼▼ 新增：NAI 主动发图指令 (私聊) ▼▼▼
+            // (来自 nai出图整体.html Part 18)
+            if (localStorage.getItem('novelai-enabled') === 'true') {
+                prompt += `
+13.5. **(可选) NovelAI真实图片分享**: 你可以在对话中主动发送一张图片。
+    - **格式**: \`{"type": "naiimag", "prompt": "详细的英文描述词..."}\`
+    - **【绝不能暴露是novelai生成的图片！】**
+    - **【重要】关于prompt的撰写**:
+      * 你可以根据当前对话上下文、你的角色人设、或你想表达的情感和氛围，来撰写详细而具体的prompt。
+      * prompt的详细程度由你根据具体情况自己决定。
+      * 专注于描述内容本身即可。
+    - **使用场景**：当你想要在私聊对话中直接给用户发送一张图片时使用。
+    - **注意**：这会直接在聊天记录中显示图片，而不是发布到动态。\n`;
+            }
+            // ▲▲▲ NAI 主动发图指令结束 ▲▲▲
             prompt += `14. **对话节奏**: 你需要模拟真人的聊天习惯，你可以一次性生成多条短消息。每次要回复至少3-8条消息。并根据当前行为/心情/地点变化实时更新状态。\n`;
             prompt += `15. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
             return prompt;
@@ -12483,7 +12892,18 @@ return `${seconds}秒`;
            if (allWorldBookContent.includes('<orange>')) {
                outputFormats += `\n   - **HTML消息**: \`<orange char="{成员真名}">{HTML内容}</orange>\`。这是一种特殊的、用于展示丰富样式的小卡片消息，你可以用它来创造更有趣的互动。注意要用成员的 **真名** 填充 \`char\` 属性。`;
            }
-           
+
+           // ▼▼▼ 新增：NAI 主动发图指令 (群聊) ▼▼▼
+           // (来自 nai出图整体.html Part 18)
+           if (localStorage.getItem('novelai-enabled') === 'true') {
+               outputFormats += `
+   - **NovelAI图片分享**: \`{"type": "naiimag", "name": "你的角色真名", "prompt": "详细的英文描述词..."}\`
+     - 【禁止暴露这是novelai生成的图片!】
+     - 【重要】prompt撰写：你可以根据当前对话上下文、你的角色人设来撰写详细而具体的prompt。
+     - 【重要】name字段必须是你正在扮演的角色的 **真名**。`;
+           }
+           // ▲▲▲ NAI 主动发图指令结束 ▲▲▲
+
             prompt += `4. **你的输出格式 (极其重要)**: 你生成的每一条消息都 **必须** 严格遵循以下格式之一。每条消息占一行。请用成员的 **真名** 填充格式中的 \`{成员真名}\`。\n${outputFormats}\n\n`;
             prompt += `   - **重要**: 群聊不支持AI成员接收/退回转账或接收礼物的特殊指令，也不支持更新状态。你只需要通过普通消息来回应我发送的转账或礼物即可。\n\n`;
 
@@ -12671,6 +13091,106 @@ return `${seconds}秒`;
                     const delay = firstMessageProcessed ? (900 + Math.random() * 1300) : (400 + Math.random() * 400);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     firstMessageProcessed = true;
+
+                    let itemContent = item.content.trim();
+                    let naiImageHandled = false; // NAI 消息处理标记
+
+                    // ▼▼▼ 新增：NAI 主动发图拦截 ▼▼▼
+                    if (localStorage.getItem('novelai-enabled') === 'true' && itemContent.startsWith('{') && itemContent.endsWith('}')) {
+                        try {
+                            const parsed = JSON.parse(itemContent);
+
+                            // 检查是否是 NAI 发图指令
+                            if (parsed.type === 'naiimag' && parsed.prompt) {
+                                naiImageHandled = true; // 标记此消息已处理
+                                let senderId = undefined;
+                                let senderName = (chat.realName || chat.name);
+
+                                // 确定发送者 (私聊 vs 群聊)
+                                if (targetChatType === 'private') {
+                                    // 私聊，发送者就是 AI 自己
+                                } else if (targetChatType === 'group') {
+                                    // 群聊，从 "name" 字段匹配 AI 成员
+                                    const aiSender = chat.members.find(m => m.realName === parsed.name);
+                                    if (aiSender) {
+                                        senderId = aiSender.id;
+                                        senderName = aiSender.groupNickname;
+                                    } else {
+                                        // 备用方案：随机一个 AI 成员
+                                        const aiMembers = chat.members;
+                                        const randomSender = aiMembers[Math.floor(Math.random() * aiMembers.length)];
+                                        senderId = randomSender.id;
+                                        senderName = randomSender.groupNickname;
+                                    }
+                                }
+
+                                // 1. 先发送一个"正在作画"的提示消息
+                                const tempMessageId = `msg_nai_pending_${Date.now()}`;
+                                const tempMessage = {
+                                    id: tempMessageId,
+                                    role: 'assistant',
+                                    content: `[${senderName}的消息：NAI 正在作画中... 🎨]`,
+                                    parts: [{type: 'text', text: `[${senderName}的消息：NAI 正在作画中... 🎨]`}],
+                                    timestamp: Date.now(),
+                                    senderId: senderId
+                                };
+
+                                chat.history.push(tempMessage);
+                                addMessageBubble(tempMessage, targetChatId, targetChatType);
+                                await saveData();
+                                renderChatList(); // 更新列表显示"正在作画"
+
+                                try {
+                                    // 2. 调用 NAI 生成函数 (传入了 senderIdOverride)
+                                    const imageDataUrl = await generateNovelAIImageForChat(parsed.prompt, targetChatId, targetChatType, senderId);
+
+                                    // 3. 创建 NAI 消息
+                                    const naiMessage = {
+                                        id: `msg_nai_${Date.now()}`,
+                                        role: 'assistant',
+                                        type: 'naiimag', // ★★★ 关键类型
+                                        content: `[${senderName}的消息：${parsed.prompt}]`, // 保留提示词作为描述
+                                        imageUrl: imageDataUrl, // 图像的 Data URL
+                                        fullPrompt: parsed.prompt,
+                                        timestamp: Date.now(),
+                                        senderId: senderId
+                                    };
+
+                                    // 4. 替换掉"正在作画"的消息
+                                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                                    if (tempMsgIndex > -1) {
+                                        chat.history.splice(tempMsgIndex, 1, naiMessage); // 替换
+                                    } else {
+                                        chat.history.push(naiMessage); // 备用方案
+                                    }
+
+                                    // 5. 重新渲染
+                                    currentPage = 1;
+                                    renderMessages(false, true);
+
+                                } catch (error) {
+                                    // 6. 处理失败
+                                    console.error('NAI 聊天作画失败:', error);
+                                    const errorMsg = `[${senderName}的消息：作画失败 😥: ${error.message}]`;
+                                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                                    if (tempMsgIndex > -1) {
+                                        chat.history[tempMsgIndex].content = errorMsg;
+                                        chat.history[tempMsgIndex].parts = [{type: 'text', text: errorMsg}];
+                                        currentPage = 1;
+                                        renderMessages(false, true);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // JSON 解析失败，不是 NAI 指令，什么也不做，让它走后续的文本逻辑
+                        }
+                    }
+                    // ▲▲▲ NAI 主动发图拦截结束 ▲▲▲
+
+                    // 如果消息被 NAI 处理了，就跳过后续的文本处理
+                    if (naiImageHandled) {
+                        continue;
+                    }
 
                     // 新增：处理AI撤回指令
                     const aiWithdrawRegex = /\[(.*?)撤回了上一条消息：([\s\S]*?)\]/;
@@ -13882,6 +14402,21 @@ return `${seconds}秒`;
                 populateBubblePresetSelect('bubble-preset-select');
                 populateMyPersonaSelect();
             }
+
+            // --- 新增 NAI 相关加载 ---
+            const naiSettingsGroup = document.getElementById('nai-character-settings-group');
+            const novelaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
+
+            if (naiSettingsGroup) {
+                naiSettingsGroup.style.display = novelaiEnabled ? 'block' : 'none';
+                if (novelaiEnabled) {
+                    const character = db.characters.find(e => e.id === currentChatId);
+                    const source = character?.naiSettings?.promptSource || 'system';
+                    const radio = document.querySelector(`input[name="nai-prompt-source"][value="${source}"]`);
+                    if (radio) radio.checked = true;
+                }
+            }
+            // --- NAI 相关加载结束 ---
         }
 
         async function saveSettingsFromSidebar() {
@@ -13918,6 +14453,25 @@ return `${seconds}秒`;
                 };
             db.apiSettings && (n.value = db.apiSettings.provider || 'newapi', r.value = db.apiSettings.url || '', s.value = db.apiSettings.key || '', db.apiSettings.model && (a.innerHTML = `<option value="${db.apiSettings.model}">${db.apiSettings.model}</option>`));
             if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
+
+            // --- NovelAI 初始化 ---
+            const novelaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
+            const novelaiApiKey = localStorage.getItem('novelai-api-key') || '';
+            const novelaiModel = localStorage.getItem('novelai-model') || 'nai-diffusion-4-5-full';
+            
+            if (novelaiSwitch) {
+                novelaiSwitch.checked = novelaiEnabled;
+                if (novelaiDetailsDiv) {
+                    novelaiDetailsDiv.style.display = novelaiEnabled ? 'block' : 'none';
+                }
+            }
+            if (novelaiApiKeyInput) {
+                novelaiApiKeyInput.value = novelaiApiKey;
+            }
+            if (novelaiModelSelect) {
+                novelaiModelSelect.value = novelaiModel;
+            }
+            // --- NovelAI 初始化结束 ---
 
             populateApiSelect();
             n.addEventListener('change', () => {
@@ -14375,6 +14929,21 @@ return `${seconds}秒`;
             const theme = colorThemes[group.theme || 'white_pink'];
             updateBubbleCssPreview(groupPreviewBox, group.customBubbleCss, !group.useCustomBubbleCss, theme);
             populateBubblePresetSelect('group-bubble-preset-select');
+
+            // --- 新增 NAI 相关加载 ---
+            const groupNaiSettingsGroup = document.getElementById('group-nai-settings-group');
+            const novelaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
+
+            if (groupNaiSettingsGroup) {
+                groupNaiSettingsGroup.style.display = novelaiEnabled ? 'block' : 'none';
+                if (novelaiEnabled) {
+                    const currentGroup = db.groups.find(g => g.id === currentChatId);
+                    const source = currentGroup?.naiSettings?.promptSource || 'system';
+                    const radio = document.querySelector(`input[name="group-nai-prompt-source"][value="${source}"]`);
+                    if (radio) radio.checked = true;
+                }
+            }
+            // --- NAI 相关加载结束 ---
         }
 
         function renderGroupMembersInSettings(group) {
@@ -15156,6 +15725,88 @@ function renderForumPosts(posts) {
 
         init();
 
+        // ========================================
+        // 🖼️ NAI图片三击下载功能（非入侵式）
+        // ========================================
+        (function() {
+            'use strict';
+
+            function downloadImage(imageSrc, filename) {
+                try {
+                    const link = document.createElement('a');
+                    link.href = imageSrc;
+                    link.download = filename;
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    setTimeout(() => { document.body.removeChild(link); }, 100);
+                    console.log('✅ [NAI下载] 开始下载图片:', filename);
+                    showToast('📥 图片下载中...');
+                } catch (error) {
+                    console.error('❌ [NAI下载] 下载失败:', error);
+                    showToast('下载失败，请重试');
+                }
+            }
+
+            function generateFilename(imgElement) {
+                const title = imgElement.getAttribute('title') || imgElement.getAttribute('alt') || '';
+                let cleanTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s]/g, '_').replace(/\s+/g, '_').substring(0, 30);
+                if (!cleanTitle) cleanTitle = 'NAI_Image';
+                const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+                return `${cleanTitle}_${timestamp}.png`;
+            }
+
+            let clickCount = 0;
+            let clickTimer = null;
+            let lastClickedElement = null;
+
+            // 使用事件委托，监听 messageArea 上的点击
+            const messageAreaForDownload = document.getElementById('message-area');
+            if (messageAreaForDownload) {
+                messageAreaForDownload.addEventListener('click', function(e) {
+                    const target = e.target;
+
+                    // 检查是否是 NAI 图片 (我们修改 createMessageBubbleElement 时添加了 .naiimag-image 类)
+                    if (target.tagName === 'IMG' && target.classList.contains('naiimag-image')) {
+
+                        if (target === lastClickedElement) {
+                            clickCount++;
+                        } else {
+                            clickCount = 1;
+                            lastClickedElement = target;
+                        }
+
+                        if (clickTimer) clearTimeout(clickTimer);
+
+                        if (clickCount === 3) {
+                            clickCount = 0;
+                            lastClickedElement = null;
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            console.log('🖼️ [NAI下载] 检测到三击NAI图片');
+                            const imageSrc = target.src;
+
+                            if (!imageSrc || imageSrc === 'about:blank') {
+                                showToast('图片加载中，请稍后重试');
+                                return;
+                            }
+                            const filename = generateFilename(target);
+                            downloadImage(imageSrc, filename);
+
+                        } else {
+                            clickTimer = setTimeout(() => {
+                                clickCount = 0;
+                                lastClickedElement = null;
+                            }, 500); // 500ms 内三次点击
+                        }
+                    }
+                }, true); // 使用捕获阶段
+            }
+
+            console.log('✅ [NAI下载] 三击下载功能已初始化');
+        })();
+
         function renderPeekSteps(data) {
             const screen = document.getElementById('peek-steps-screen');
             const char = db.characters.find(c => c.id === currentChatId);
@@ -15593,6 +16244,923 @@ function renderForumPosts(posts) {
             }
         }
 
+        // ========================================
+        // 🎨 NovelAI 生图功能 - 事件监听与基础逻辑
+        // ========================================
+
+        // --- NovelAI API 设置页面的事件监听 ---
+        const novelaiSwitch = document.getElementById('novelai-switch');
+        const novelaiDetailsDiv = document.getElementById('novelai-details');
+        const novelaiApiKeyInput = document.getElementById('novelai-api-key');
+        const novelaiKeyToggle = document.getElementById('novelai-key-toggle');
+        const novelaiSettingsBtn = document.getElementById('novelai-settings-btn');
+        const novelaiTestBtn = document.getElementById('novelai-test-btn');
+        const novelaiModelSelect = document.getElementById('novelai-model'); // 新增：模型选择器
+
+        if (novelaiSwitch && novelaiDetailsDiv) {
+            novelaiSwitch.addEventListener('change', (e) => {
+                novelaiDetailsDiv.style.display = e.target.checked ? 'block' : 'none';
+                // 保存开关状态到 localStorage
+                localStorage.setItem('novelai-enabled', e.target.checked);
+            });
+        }
+
+        if (novelaiKeyToggle && novelaiApiKeyInput) {
+            novelaiKeyToggle.addEventListener('click', function() {
+                if (novelaiApiKeyInput.type === 'password') {
+                    novelaiApiKeyInput.type = 'text';
+                    this.textContent = '😌';
+                } else {
+                    novelaiApiKeyInput.type = 'password';
+                    this.textContent = '🧐';
+                }
+            });
+        }
+
+        // 新增：保存 API Key 和模型选择到 localStorage
+        if (novelaiApiKeyInput) {
+            novelaiApiKeyInput.addEventListener('change', () => {
+                localStorage.setItem('novelai-api-key', novelaiApiKeyInput.value.trim());
+            });
+        }
+        if (novelaiModelSelect) {
+            novelaiModelSelect.addEventListener('change', () => {
+                localStorage.setItem('novelai-model', novelaiModelSelect.value);
+            });
+        }
+
+
+        // --- NovelAI 生成设置弹窗的事件监听 ---
+        const novelaiSettingsModal = document.getElementById('novelai-settings-modal');
+        const closeNovelaiSettingsBtn = document.getElementById('close-novelai-settings');
+        const saveNaiSettingsBtn = document.getElementById('save-nai-settings-btn');
+        const resetNaiSettingsBtn = document.getElementById('reset-nai-settings-btn');
+        const naiCorsProxySelect = document.getElementById('nai-cors-proxy');
+        const naiCustomProxyGroup = document.getElementById('nai-custom-proxy-group');
+
+        if (novelaiSettingsBtn && novelaiSettingsModal) {
+            novelaiSettingsBtn.addEventListener('click', () => {
+                loadNovelAISettings(); // 打开弹窗前加载现有设置
+                novelaiSettingsModal.classList.add('visible'); // 使用 visible 类控制显示
+            });
+        }
+
+        if (closeNovelaiSettingsBtn && novelaiSettingsModal) {
+            closeNovelaiSettingsBtn.addEventListener('click', () => {
+                novelaiSettingsModal.classList.remove('visible'); // 使用 visible 类控制隐藏
+            });
+        }
+
+        if (saveNaiSettingsBtn && novelaiSettingsModal) {
+            saveNaiSettingsBtn.addEventListener('click', () => {
+                saveNovelAISettings();
+                novelaiSettingsModal.classList.remove('visible');
+                showToast('NovelAI 设置已保存！'); // 使用您项目中的提示函数
+            });
+        }
+
+        if (resetNaiSettingsBtn) {
+            resetNaiSettingsBtn.addEventListener('click', () => {
+                if (confirm('确定要恢复 NovelAI 生成设置到默认值吗？')) {
+                    resetNovelAISettings();
+                    showToast('已恢复默认设置！');
+                }
+            });
+        }
+
+        if (naiCorsProxySelect && naiCustomProxyGroup) {
+            naiCorsProxySelect.addEventListener('change', (e) => {
+                naiCustomProxyGroup.style.display = (e.target.value === 'custom') ? 'block' : 'none';
+            });
+        }
+
+        // --- NovelAI 测试生成弹窗的事件监听 ---
+        const novelaiTestModal = document.getElementById('novelai-test-modal');
+        const closeNovelaiTestBtn = document.getElementById('close-novelai-test');
+        const closeNaiTestBtnFooter = document.getElementById('close-nai-test-btn'); // 弹窗底部的关闭按钮
+        const naiGenerateBtn = document.getElementById('nai-generate-btn');
+        const naiDownloadBtn = document.getElementById('nai-download-btn');
+        const naiResultImage = document.getElementById('nai-result-image'); // 获取图片元素
+
+        if (novelaiTestBtn && novelaiTestModal && novelaiApiKeyInput) {
+            novelaiTestBtn.addEventListener('click', () => {
+                const apiKey = novelaiApiKeyInput.value.trim();
+                if (!apiKey) {
+                    showToast('请先填写 NovelAI API Key！');
+                    return;
+                }
+                // 重置测试弹窗状态
+                document.getElementById('nai-test-prompt').value = '1girl, solo, long hair, blue eyes, smile, outdoors, cherry blossoms, spring';
+                document.getElementById('nai-test-negative').value = '';
+                document.getElementById('nai-test-status').style.display = 'none';
+                document.getElementById('nai-test-result').style.display = 'none';
+                document.getElementById('nai-test-error').style.display = 'none';
+                if (naiResultImage) naiResultImage.src = ''; // 清空上次的图片
+
+                novelaiTestModal.classList.add('visible');
+            });
+        }
+
+        if (closeNovelaiTestBtn && novelaiTestModal) {
+            closeNovelaiTestBtn.addEventListener('click', () => {
+                novelaiTestModal.classList.remove('visible');
+            });
+        }
+        if (closeNaiTestBtnFooter && novelaiTestModal) { // 绑定底部关闭按钮
+            closeNaiTestBtnFooter.addEventListener('click', () => {
+                novelaiTestModal.classList.remove('visible');
+            });
+        }
+
+        if (naiGenerateBtn) {
+            naiGenerateBtn.addEventListener('click', async () => {
+                // 调用生成函数（将在后续步骤中实现完整逻辑）
+                await generateNovelAIImage();
+            });
+        }
+
+        if (naiDownloadBtn && naiResultImage) {
+            naiDownloadBtn.addEventListener('click', () => {
+                const imgSrc = naiResultImage.src;
+                if (!imgSrc || imgSrc === 'about:blank') {
+                    showToast('没有可下载的图片。');
+                    return;
+                }
+                const link = document.createElement('a');
+                link.href = imgSrc;
+                // 尝试从 prompt 生成文件名
+                const promptText = document.getElementById('nai-test-prompt').value.substring(0, 30).replace(/[^a-z0-9]/gi, '_');
+                link.download = `novelai_${promptText || 'generated'}_${Date.now()}.png`;
+                link.click();
+            });
+        }
+
+        // --- 角色专属提示词弹窗的事件监听 ---
+        const characterNaiPromptsModal = document.getElementById('character-nai-prompts-modal');
+        const openCharacterNaiBtn = document.getElementById('character-nai-prompts-btn');
+        const openGroupNaiBtn = document.getElementById('group-character-nai-prompts-btn');
+        const closeCharacterNaiBtn = document.getElementById('close-character-nai-prompts');
+        const saveCharacterNaiBtn = document.getElementById('save-character-nai-prompts-btn');
+        const resetCharacterNaiBtn = document.getElementById('reset-character-nai-prompts-btn');
+        const characterNaiPositiveInput = document.getElementById('character-nai-positive');
+        const characterNaiNegativeInput = document.getElementById('character-nai-negative');
+
+        // 打开弹窗的逻辑（合并私聊和群聊按钮）
+        const openNaiPromptModal = () => {
+            // 检查当前聊天是否存在
+            const chat = (currentChatType === 'private')
+                ? db.characters.find(c => c.id === currentChatId)
+                : db.groups.find(g => g.id === currentChatId);
+
+            if (!chat) {
+                showToast('请先选择一个聊天');
+                return;
+            }
+
+            // 加载当前角色/群聊的 NAI 提示词配置
+            const naiSettings = chat.naiSettings || { // 统一使用 naiSettings 字段
+                positivePrompt: '',
+                negativePrompt: ''
+            };
+
+            // 填充弹窗内容
+            characterNaiPositiveInput.value = naiSettings.positivePrompt || '';
+            characterNaiNegativeInput.value = naiSettings.negativePrompt || '';
+
+            characterNaiPromptsModal.classList.add('visible');
+        };
+
+        if (openCharacterNaiBtn) {
+            openCharacterNaiBtn.addEventListener('click', openNaiPromptModal);
+        }
+        if (openGroupNaiBtn) {
+            openGroupNaiBtn.addEventListener('click', openNaiPromptModal);
+        }
+
+        if (closeCharacterNaiBtn && characterNaiPromptsModal) {
+            closeCharacterNaiBtn.addEventListener('click', () => {
+                characterNaiPromptsModal.classList.remove('visible');
+            });
+        }
+
+        if (saveCharacterNaiBtn && characterNaiPromptsModal) {
+            saveCharacterNaiBtn.addEventListener('click', async () => {
+                const chat = (currentChatType === 'private')
+                    ? db.characters.find(c => c.id === currentChatId)
+                    : db.groups.find(g => g.id === currentChatId);
+
+                if (!chat) return;
+
+                // 确保 naiSettings 对象存在
+                if (!chat.naiSettings) {
+                    chat.naiSettings = {};
+                }
+
+                // 保存提示词
+                chat.naiSettings.positivePrompt = characterNaiPositiveInput.value.trim();
+                chat.naiSettings.negativePrompt = characterNaiNegativeInput.value.trim();
+
+                console.log(`💾 保存 ${currentChatType === 'private' ? '角色' : '群聊'} [${chat.id}] NAI提示词`);
+                console.log('   Positive:', chat.naiSettings.positivePrompt || '(空)');
+                console.log('   Negative:', chat.naiSettings.negativePrompt || '(空)');
+
+                await saveData(); // 保存到数据库
+
+                characterNaiPromptsModal.classList.remove('visible');
+                showToast(`${currentChatType === 'private' ? '角色' : '群聊'}专属 NAI 提示词已保存！`);
+            });
+        }
+
+        if (resetCharacterNaiBtn) {
+            resetCharacterNaiBtn.addEventListener('click', () => {
+                if (confirm(`确定要清空当前${currentChatType === 'private' ? '角色' : '群聊'}的 NAI 提示词配置吗？`)) {
+                    characterNaiPositiveInput.value = '';
+                    characterNaiNegativeInput.value = '';
+                    // 不需要立即保存，用户需要点击"保存"按钮确认
+                    showToast('已清空输入框，请点击保存生效。');
+                }
+            });
+        }
+
+        // --- 角色/群聊设置侧边栏中提示词来源的事件监听 ---
+        function handlePromptSourceChange(event) {
+            const chat = (currentChatType === 'private')
+                ? db.characters.find(c => c.id === currentChatId)
+                : db.groups.find(g => g.id === currentChatId);
+            if (!chat) return;
+
+            const source = event.target.value; // 'system' or 'character'
+
+            // 确保 naiSettings 对象存在
+            if (!chat.naiSettings) {
+                chat.naiSettings = {};
+            }
+            chat.naiSettings.promptSource = source;
+
+            saveData(); // 立即保存来源选择
+
+            console.log(`🔄 ${currentChatType === 'private' ? '角色' : '群聊'} [${chat.id}] NAI提示词来源切换为: ${source}`);
+        }
+
+        // 监听私聊的 Radio 按钮组
+        const naiPromptSourceRadios = document.querySelectorAll('input[name="nai-prompt-source"]');
+        naiPromptSourceRadios.forEach(radio => {
+            radio.addEventListener('change', handlePromptSourceChange);
+        });
+
+        // 监听群聊的 Radio 按钮组
+        const groupNaiPromptSourceRadios = document.querySelectorAll('input[name="group-nai-prompt-source"]');
+        groupNaiPromptSourceRadios.forEach(radio => {
+            radio.addEventListener('change', handlePromptSourceChange);
+        });
+
+
+        // --- NovelAI 设置相关函数 (加载/保存/重置) ---
+
+        // 获取 NovelAI 设置 (合并默认值与 localStorage)
+        function getNovelAISettings() {
+            const defaultSettings = {
+                resolution: '1024x1024',
+                steps: 28,
+                cfg_scale: 5,
+                sampler: 'k_euler_ancestral',
+                seed: -1,
+                uc_preset: 1, // Preset 1 - Light
+                quality_toggle: true,
+                smea: true,
+                smea_dyn: false,
+                default_positive: 'masterpiece, best quality, 1girl, beautiful, detailed face, detailed eyes, long hair, anime style',
+                default_negative: 'lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry',
+                cors_proxy: 'https://corsproxy.io/?',
+                custom_proxy_url: ''
+            };
+
+            const saved = localStorage.getItem('novelai-settings');
+            let mergedSettings = defaultSettings;
+            if (saved) {
+                try {
+                    // 合并时，确保存储的值类型正确
+                    const parsed = JSON.parse(saved);
+                    mergedSettings = {
+                        ...defaultSettings,
+                        ...parsed,
+                        // 强制转换类型以防存储了错误类型
+                        steps: parseInt(parsed.steps) || defaultSettings.steps,
+                        cfg_scale: parseFloat(parsed.cfg_scale) || defaultSettings.cfg_scale,
+                        seed: parseInt(parsed.seed) || defaultSettings.seed,
+                        uc_preset: parseInt(parsed.uc_preset) || defaultSettings.uc_preset,
+                        quality_toggle: typeof parsed.quality_toggle === 'boolean' ? parsed.quality_toggle : defaultSettings.quality_toggle,
+                        smea: typeof parsed.smea === 'boolean' ? parsed.smea : defaultSettings.smea,
+                        smea_dyn: typeof parsed.smea_dyn === 'boolean' ? parsed.smea_dyn : defaultSettings.smea_dyn,
+                    };
+                } catch (e) {
+                    console.error("解析 NovelAI 设置失败:", e);
+                    // 解析失败则使用默认值
+                }
+            }
+            return mergedSettings;
+        }
+
+        // 加载设置到 NovelAI 设置弹窗
+        function loadNovelAISettings() {
+            const settings = getNovelAISettings();
+            // 填充弹窗内的表单元素
+            document.getElementById('nai-resolution').value = settings.resolution;
+            document.getElementById('nai-steps').value = settings.steps;
+            document.getElementById('nai-cfg-scale').value = settings.cfg_scale;
+            document.getElementById('nai-sampler').value = settings.sampler;
+            document.getElementById('nai-seed').value = settings.seed;
+            document.getElementById('nai-uc-preset').value = settings.uc_preset;
+            document.getElementById('nai-quality-toggle').checked = settings.quality_toggle;
+            document.getElementById('nai-smea').checked = settings.smea;
+            document.getElementById('nai-smea-dyn').checked = settings.smea_dyn;
+            document.getElementById('nai-default-positive').value = settings.default_positive;
+            document.getElementById('nai-default-negative').value = settings.default_negative;
+            document.getElementById('nai-cors-proxy').value = settings.cors_proxy;
+            document.getElementById('nai-custom-proxy-url').value = settings.custom_proxy_url || '';
+
+            // 根据 CORS 代理选择显示/隐藏自定义输入框
+            const customProxyGroup = document.getElementById('nai-custom-proxy-group');
+            customProxyGroup.style.display = settings.cors_proxy === 'custom' ? 'block' : 'none';
+        }
+
+        // 从 NovelAI 设置弹窗保存设置
+        function saveNovelAISettings() {
+            // 保存 API 设置页面的基础配置 (开关状态已在事件监听中保存)
+            localStorage.setItem('novelai-api-key', document.getElementById('novelai-api-key').value.trim());
+            localStorage.setItem('novelai-model', document.getElementById('novelai-model').value);
+
+            // 保存高级参数配置
+            const settings = {
+                resolution: document.getElementById('nai-resolution').value,
+                steps: parseInt(document.getElementById('nai-steps').value) || 28, // 提供默认值
+                cfg_scale: parseFloat(document.getElementById('nai-cfg-scale').value) || 5, // 提供默认值
+                sampler: document.getElementById('nai-sampler').value,
+                seed: parseInt(document.getElementById('nai-seed').value) || -1, // 提供默认值
+                uc_preset: parseInt(document.getElementById('nai-uc-preset').value), // select 不需要默认值
+                quality_toggle: document.getElementById('nai-quality-toggle').checked,
+                smea: document.getElementById('nai-smea').checked,
+                smea_dyn: document.getElementById('nai-smea-dyn').checked,
+                default_positive: document.getElementById('nai-default-positive').value.trim(),
+                default_negative: document.getElementById('nai-default-negative').value.trim(),
+                cors_proxy: document.getElementById('nai-cors-proxy').value,
+                custom_proxy_url: document.getElementById('nai-custom-proxy-url').value.trim()
+            };
+
+            localStorage.setItem('novelai-settings', JSON.stringify(settings));
+        }
+
+        // 恢复默认设置
+        function resetNovelAISettings() {
+            localStorage.removeItem('novelai-settings');
+            // 恢复默认设置后，需要重新加载默认值到弹窗中
+            loadNovelAISettings();
+        }
+
+        // ========================================
+        // ⚙️ NovelAI 生图功能 - 核心逻辑
+        // ========================================
+
+        /**
+         * 调用 NovelAI API 生成图像 (用于测试弹窗)
+         */
+        async function generateNovelAIImage() {
+            // 从 localStorage 或 DOM 获取基础设置
+            const apiKey = localStorage.getItem('novelai-api-key') || '';
+            const model = localStorage.getItem('novelai-model') || 'nai-diffusion-4-5-full';
+            const prompt = document.getElementById('nai-test-prompt').value.trim();
+            const negativePromptTest = document.getElementById('nai-test-negative').value.trim(); // 测试弹窗的负面提示词
+
+            // 获取包含高级参数和默认提示词的系统设置
+            const settings = getNovelAISettings();
+            // 决定最终使用的负面提示词
+            const finalNegativePrompt = negativePromptTest || settings.default_negative;
+
+            // 基本校验
+            if (!apiKey) {
+                showToast('请先配置 NovelAI API Key！');
+                return;
+            }
+            if (!prompt) {
+                showToast('请输入正面提示词！');
+                return;
+            }
+
+            // 获取 UI 元素用于状态更新
+            const statusDiv = document.getElementById('nai-test-status');
+            const resultDiv = document.getElementById('nai-test-result');
+            const errorDiv = document.getElementById('nai-test-error');
+            const generateBtn = document.getElementById('nai-generate-btn');
+            const resultImage = document.getElementById('nai-result-image');
+
+            // 更新 UI 状态：显示加载中
+            statusDiv.textContent = '正在请求 NovelAI API...';
+            statusDiv.style.display = 'block';
+            resultDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            resultImage.src = '';
+            generateBtn.disabled = true;
+            generateBtn.textContent = '生成中...';
+
+            try {
+                const [width, height] = settings.resolution.split('x').map(Number);
+                let requestBody;
+                let apiUrl;
+
+                // ★★★ 根据模型版本构建不同的请求体和 API 端点 ★★★
+                if (model.includes('nai-diffusion-4')) {
+                    // V4/V4.5 使用新格式 (params_version: 3) 和流式端点
+                    apiUrl = 'https://image.novelai.net/ai/generate-image-stream';
+                    requestBody = {
+                        input: prompt, // 注意：V4.5 这里其实是用 v4_prompt 替代，但为了简单兼容，保留 input
+                        model: model,
+                        action: 'generate',
+                        parameters: {
+                            params_version: 3,
+                            width: width,
+                            height: height,
+                            scale: settings.cfg_scale,
+                            sampler: settings.sampler,
+                            steps: settings.steps,
+                            seed: settings.seed === -1 ? Math.floor(Math.random() * 9999999999) : settings.seed,
+                            n_samples: 1,
+                            ucPreset: settings.uc_preset,
+                            qualityToggle: settings.quality_toggle,
+                            // V4 特定参数 (部分可能 V3 不支持)
+                            autoSmea: false, // 似乎不再使用 sm/sm_dyn，可能是内部处理或通过 qualityToggle
+                            dynamic_thresholding: false,
+                            controlnet_strength: 1,
+                            legacy: false,
+                            add_original_image: true, // V4 需要
+                            cfg_rescale: 0,
+                            noise_schedule: 'karras', // V4 推荐
+                            legacy_v3_extend: false,
+                            // V4 特有的 prompt 结构
+                            v4_prompt: {
+                                caption: { base_caption: prompt, char_captions: [] },
+                                use_coords: false,
+                                use_order: true
+                            },
+                            // V4 特有的 negative prompt 结构
+                            v4_negative_prompt: {
+                                caption: { base_caption: finalNegativePrompt, char_captions: [] },
+                                legacy_uc: false
+                            },
+                            negative_prompt: finalNegativePrompt, // 仍然需要传递
+                            prefer_brownian: true // V4.5 新增?
+                            // 注意：V4 Stream 不包含 sm, sm_dyn
+                        }
+                    };
+                } else {
+                    // V3 及更早版本使用旧格式和标准端点
+                    apiUrl = 'https://image.novelai.net/ai/generate-image';
+                    requestBody = {
+                        input: prompt,
+                        model: model,
+                        action: 'generate',
+                        parameters: {
+                            width: width,
+                            height: height,
+                            scale: settings.cfg_scale,
+                            sampler: settings.sampler,
+                            steps: settings.steps,
+                            seed: settings.seed === -1 ? Math.floor(Math.random() * 9999999999) : settings.seed,
+                            n_samples: 1,
+                            ucPreset: settings.uc_preset,
+                            qualityToggle: settings.quality_toggle,
+                            sm: settings.smea,         // V3 使用 sm
+                            sm_dyn: settings.smea_dyn, // V3 使用 sm_dyn
+                            dynamic_thresholding: false,
+                            controlnet_strength: 1,
+                            legacy: false,
+                            add_original_image: false, // V3 不需要
+                            cfg_rescale: 0,
+                            noise_schedule: 'native', // V3 使用 native
+                            negative_prompt: finalNegativePrompt
+                        }
+                    };
+                }
+
+                console.log('📤 发送请求到 NovelAI API');
+                console.log('📊 使用模型:', model);
+                // console.log('📋 请求体:', JSON.stringify(requestBody, null, 2)); // 打印完整请求体用于调试
+
+                // --- CORS 代理处理 ---
+                let corsProxy = settings.cors_proxy;
+                if (corsProxy === 'custom') {
+                    corsProxy = settings.custom_proxy_url || '';
+                }
+                if (corsProxy && corsProxy !== '' && !apiUrl.startsWith('http://localhost') && !apiUrl.startsWith('http://127.0.0.1')) { // 本地地址不加代理
+                     // NAI API URL 需要被编码
+                     apiUrl = corsProxy + encodeURIComponent(apiUrl);
+                     console.log('🔗 使用 CORS 代理:', corsProxy);
+                } else {
+                     console.log('🔗 直连 NovelAI API');
+                }
+
+
+                // --- 发起 Fetch 请求 ---
+                const fetchOptions = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify(requestBody)
+                };
+
+                const response = await fetch(apiUrl, fetchOptions);
+                console.log('Response Status:', response.status);
+
+                // --- 处理响应 ---
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('API 错误响应:', errorText);
+                    // 尝试解析常见的错误信息
+                    let friendlyError = `API 请求失败 (${response.status})`;
+                    if (errorText.includes('Unauthorized')) friendlyError += ': API Key 无效或错误。';
+                    else if (errorText.includes('credits')) friendlyError += ': 点数不足。';
+                    else if (errorText.includes('subscription')) friendlyError += ': 需要有效的订阅。';
+                    else if (response.status === 429) friendlyError += ': 请求过于频繁，请稍后再试。';
+                    else if (response.status === 403) friendlyError += ': 禁止访问，可能是并发限制或权限问题。';
+                    else friendlyError += `: ${errorText.substring(0, 100)}`; // 显示部分错误文本
+                    throw new Error(friendlyError);
+                }
+
+                const contentType = response.headers.get('content-type');
+                console.log('Response Content-Type:', contentType);
+
+                let imageBlob;
+
+                // --- 处理 V4.5 流式响应 (SSE) ---
+                if (contentType && contentType.includes('text/event-stream')) {
+                    statusDiv.textContent = '正在接收流式数据...';
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let base64Data = null;
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+
+                        // 处理 SSE 事件块
+                        const eventEndIndex = buffer.indexOf('\n\n');
+                        if (eventEndIndex !== -1) {
+                            const eventData = buffer.substring(0, eventEndIndex);
+                            buffer = buffer.substring(eventEndIndex + 2); // 移除已处理的部分
+
+                            const lines = eventData.split('\n');
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const dataContent = line.substring(6).trim();
+                                    if (dataContent && dataContent !== '[DONE]') {
+                                        try {
+                                            const jsonData = JSON.parse(dataContent);
+                                            // V4.5 流式响应在 final 事件中包含 base64 图片
+                                            if (jsonData.event_type === 'final' && jsonData.image) {
+                                                base64Data = jsonData.image;
+                                                console.log('✅ 从 SSE final 事件提取图片数据');
+                                            }
+                                            // 也可以检查其他可能的 data 字段
+                                            else if (jsonData.data && typeof jsonData.data === 'string') {
+                                                 base64Data = jsonData.data;
+                                                 console.log('✅ 从 SSE data 字段提取图片数据');
+                                            }
+                                        } catch (e) {
+                                            // 如果不是 JSON，直接当作 base64 数据 (兼容旧格式?)
+                                            base64Data = dataContent;
+                                            console.log('⚠️ SSE data 不是 JSON，直接使用');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (!base64Data) {
+                        throw new Error('无法从 SSE 响应中提取图片数据');
+                    }
+
+                    // V4.5 流式直接返回 PNG base64
+                    const binaryString = atob(base64Data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    imageBlob = new Blob([bytes], { type: 'image/png' }); // 假设是 PNG
+                    console.log('✅ SSE 图片 Blob 创建成功, 大小:', imageBlob.size);
+
+                } else {
+                    // --- 处理 V3 或非流式响应 (可能是 ZIP 或直接图片) ---
+                    statusDiv.textContent = '正在下载图片数据...';
+                    const responseData = await response.blob();
+                    console.log('收到数据，类型:', responseData.type, '大小:', responseData.size);
+
+                    // 如果 Content-Type 直接是图片类型，直接使用
+                    if (responseData.type.startsWith('image/')) {
+                        console.log('✅ 响应直接为图片格式');
+                        imageBlob = responseData;
+                    }
+                    // 否则，假设是 ZIP 文件 (NovelAI V3 的标准返回格式)
+                    else if (responseData.type === 'application/zip' || responseData.type === 'application/octet-stream') {
+                        statusDiv.textContent = '正在解压图片...';
+                        // ★★★ 检查 JSZip 是否已加载 ★★★
+                        if (typeof JSZip === 'undefined') {
+                             throw new Error('需要 JSZip 库来解压图片。请在 HTML 中引入 JSZip。');
+                         }
+                        try {
+                            const zip = await JSZip.loadAsync(responseData);
+                            console.log('ZIP 文件内容:', Object.keys(zip.files));
+                            let imageFile = null;
+                            // 查找第一个图片文件
+                            for (const filename in zip.files) {
+                                if (filename.match(/\.(png|jpg|jpeg|webp)$/i)) {
+                                    imageFile = zip.files[filename];
+                                    console.log('找到图片文件:', filename);
+                                    break;
+                                }
+                            }
+                            if (!imageFile) {
+                                throw new Error('ZIP 文件中未找到图片');
+                            }
+                            imageBlob = await imageFile.async('blob');
+                            console.log('✅ ZIP 解压成功, 提取图片大小:', imageBlob.size);
+                        } catch (zipError) {
+                            console.error('ZIP 解压失败:', zipError);
+                            throw new Error('图片解压失败: ' + zipError.message);
+                        }
+                    } else {
+                        // 未知响应类型
+                        throw new Error(`未知的响应类型: ${responseData.type}`);
+                    }
+                }
+
+                // --- 显示图片 ---
+                if (imageBlob) {
+                    const imageUrl = URL.createObjectURL(imageBlob);
+                    resultImage.onload = () => URL.revokeObjectURL(imageUrl); // 释放内存
+                    resultImage.src = imageUrl;
+                    statusDiv.style.display = 'none';
+                    resultDiv.style.display = 'block';
+                    console.log('✅ 图片显示成功！🎨');
+                } else {
+                    throw new Error('未能获取到有效的图片数据');
+                }
+
+            } catch (error) {
+                console.error('NovelAI 生成失败:', error);
+                statusDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                // 使用您项目中的 showApiError 或直接显示
+                errorDiv.textContent = '生成失败: ' + error.message;
+                // 或者调用 showApiError(error);
+            } finally {
+                // 恢复按钮状态
+                generateBtn.disabled = false;
+                generateBtn.textContent = '生成图像';
+            }
+        }
+
+        // ========================================
+        // 🎨 NovelAI 生图功能 - 聊天集成逻辑
+        // ========================================
+
+        /**
+         * 获取当前聊天（角色或群聊）的NAI提示词配置
+         * @param {string} chatId - 聊天ID
+         * @param {string} chatType - 聊天类型 ('private' 或 'group')
+         * @returns {object} { positive: string, negative: string, source: string }
+         */
+        function getCharacterNAIPrompts(chatId, chatType) {
+            // 1. 获取系统默认配置
+            const systemSettings = getNovelAISettings();
+            const systemPrompts = {
+                positive: systemSettings.default_positive,
+                negative: systemSettings.default_negative,
+                source: 'system'
+            };
+
+            // 2. 查找当前聊天对象
+            const chat = (chatType === 'private')
+                ? db.characters.find(c => c.id === chatId)
+                : db.groups.find(g => g.id === chatId);
+
+            if (!chat) {
+                console.warn('NAI提示词：未找到聊天对象，使用系统默认。');
+                return systemPrompts;
+            }
+
+            // 3. 检查角色的专属配置
+            const naiSettings = chat.naiSettings || {};
+
+            // 4. 判断使用哪个配置
+            if (naiSettings.promptSource === 'character') {
+                console.log('✅ NAI提示词：使用角色/群聊专属配置');
+                return {
+                    positive: naiSettings.positivePrompt || '', // 使用角色专属配置，为空则为空
+                    negative: naiSettings.negativePrompt || '', // 使用角色专属配置，为空则为空
+                    source: 'character'
+                };
+            } else {
+                // 默认或明确选择 'system'
+                console.log('✅ NAI提示词：使用系统默认配置');
+                return systemPrompts;
+            }
+        }
+
+        /**
+         * 为聊天生成 NovelAI 图像 (v2 - 支持指定发送者)
+         * @param {string} userPrompt - 用户或AI输入的提示词
+         * @param {string} chatId - 聊天ID
+         * @param {string} chatType - 聊天类型 ('private' 或 'group')
+         * @param {string|null} senderIdOverride - (仅群聊) 强制指定AI发送者的senderId
+         * @returns {string} 返回生成的图像 Data URL
+         */
+        async function generateNovelAIImageForChat(userPrompt, chatId, chatType, senderIdOverride = null) {
+            // 1. 获取基础和高级设置
+            const apiKey = localStorage.getItem('novelai-api-key') || '';
+            const model = localStorage.getItem('novelai-model') || 'nai-diffusion-4-5-full';
+            const settings = getNovelAISettings(); // 高级参数
+
+            if (!apiKey) {
+                throw new Error('请先在API设置中配置 NovelAI API Key！');
+            }
+
+            // 2. 获取当前聊天专属的提示词 (注意：AI主动发图时，我们通常使用它自己的专属配置)
+            const promptsConfig = getCharacterNAIPrompts(chatId, chatType);
+
+            // 3. 组合最终的提示词
+            let finalPositivePrompt = userPrompt;
+            if (promptsConfig.positive) {
+                finalPositivePrompt += `, ${promptsConfig.positive}`;
+            }
+
+            // 4. 获取最终的负面提示词
+            const finalNegativePrompt = promptsConfig.negative;
+
+            console.log('🎨 NAI 聊天作画开始...');
+            console.log('   模型:', model);
+            console.log('   AI/用户 Prompt:', userPrompt);
+            console.log('   专属配置来源:', promptsConfig.source);
+            console.log('   最终正面 Prompt:', finalPositivePrompt);
+            console.log('   最终负面 Prompt:', finalNegativePrompt);
+            console.log('   发送者指定:', senderIdOverride || 'N/A');
+
+            // 5. 构建请求体 (与测试弹窗的逻辑相同)
+            const [width, height] = settings.resolution.split('x').map(Number);
+            let requestBody;
+            let apiUrl;
+
+            if (model.includes('nai-diffusion-4')) {
+                apiUrl = 'https://image.novelai.net/ai/generate-image-stream';
+                requestBody = {
+                    input: finalPositivePrompt,
+                    model: model,
+                    action: 'generate',
+                    parameters: {
+                        params_version: 3,
+                        width, height,
+                        scale: settings.cfg_scale,
+                        sampler: settings.sampler,
+                        steps: settings.steps,
+                        seed: settings.seed === -1 ? Math.floor(Math.random() * 9999999999) : settings.seed,
+                        n_samples: 1,
+                        ucPreset: settings.uc_preset,
+                        qualityToggle: settings.quality_toggle,
+                        autoSmea: false,
+                        dynamic_thresholding: false,
+                        controlnet_strength: 1,
+                        legacy: false,
+                        add_original_image: true,
+                        cfg_rescale: 0,
+                        noise_schedule: 'karras',
+                        legacy_v3_extend: false,
+                        v4_prompt: { caption: { base_caption: finalPositivePrompt, char_captions: [] }, use_coords: false, use_order: true },
+                        v4_negative_prompt: { caption: { base_caption: finalNegativePrompt, char_captions: [] }, legacy_uc: false },
+                        negative_prompt: finalNegativePrompt,
+                        prefer_brownian: true
+                    }
+                };
+            } else {
+                apiUrl = 'https://image.novelai.net/ai/generate-image';
+                requestBody = {
+                    input: finalPositivePrompt,
+                    model: model,
+                    action: 'generate',
+                    parameters: {
+                        width, height,
+                        scale: settings.cfg_scale,
+                        sampler: settings.sampler,
+                        steps: settings.steps,
+                        seed: settings.seed === -1 ? Math.floor(Math.random() * 9999999999) : settings.seed,
+                        n_samples: 1,
+                        ucPreset: settings.uc_preset,
+                        qualityToggle: settings.quality_toggle,
+                        sm: settings.smea,
+                        sm_dyn: settings.smea_dyn,
+                        dynamic_thresholding: false,
+                        controlnet_strength: 1,
+                        legacy: false,
+                        add_original_image: false,
+                        cfg_rescale: 0,
+                        noise_schedule: 'native',
+                        negative_prompt: finalNegativePrompt
+                    }
+                };
+            }
+
+            // 6. CORS 代理处理
+            let corsProxy = settings.cors_proxy;
+            if (corsProxy === 'custom') corsProxy = settings.custom_proxy_url || '';
+            if (corsProxy && corsProxy !== '' && !apiUrl.startsWith('http://localhost') && !apiUrl.startsWith('http://127.0.0.1')) {
+                apiUrl = corsProxy + encodeURIComponent(apiUrl);
+            }
+
+            const fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+                body: JSON.stringify(requestBody)
+            };
+
+            // 7. 发起请求
+            const response = await fetch(apiUrl, fetchOptions);
+            if (!response.ok) {
+                const errorText = await response.text();
+                let friendlyError = `API 请求失败 (${response.status})`;
+                if (errorText.includes('Unauthorized')) friendlyError += ': API Key 无效。';
+                else if (response.status === 429) friendlyError += ': 请求频繁，请稍后再试。';
+                else if (response.status === 403) friendlyError += ': 禁止访问，可能是并发限制。';
+                else friendlyError += `: ${errorText.substring(0, 100)}`;
+                throw new Error(friendlyError);
+            }
+
+            const contentType = response.headers.get('content-type');
+            let imageBlob;
+
+            // 8. 处理响应 (流式或 ZIP)
+            if (contentType && contentType.includes('text/event-stream')) {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let base64Data = null;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const eventEndIndex = buffer.indexOf('\n\n');
+                    if (eventEndIndex !== -1) {
+                        const eventData = buffer.substring(0, eventEndIndex);
+                        buffer = buffer.substring(eventEndIndex + 2);
+                        const lines = eventData.split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const dataContent = line.substring(6).trim();
+                                if (dataContent && dataContent !== '[DONE]') {
+                                    try {
+                                        const jsonData = JSON.parse(dataContent);
+                                        if (jsonData.event_type === 'final' && jsonData.image) base64Data = jsonData.image;
+                                        else if (jsonData.data && typeof jsonData.data === 'string') base64Data = jsonData.data;
+                                    } catch (e) { base64Data = dataContent; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!base64Data) throw new Error('无法从 SSE 响应中提取图片数据');
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+                imageBlob = new Blob([bytes], { type: 'image/png' });
+
+            } else {
+                const responseData = await response.blob();
+                if (responseData.type.startsWith('image/')) {
+                    imageBlob = responseData;
+                } else if (responseData.type === 'application/zip' || responseData.type === 'application/octet-stream') {
+                    if (typeof JSZip === 'undefined') throw new Error('JSZip 库未加载');
+                    const zip = await JSZip.loadAsync(responseData);
+                    let imageFile = null;
+                    for (const filename in zip.files) {
+                        if (filename.match(/\.(png|jpg|jpeg|webp)$/i)) { imageFile = zip.files[filename]; break; }
+                    }
+                    if (!imageFile) throw new Error('ZIP 文件中未找到图片');
+                    imageBlob = await imageFile.async('blob');
+                } else {
+                    throw new Error(`未知的响应类型: ${responseData.type}`);
+                }
+            }
+
+            // 9. 将 Blob 转换为 Data URL
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(imageBlob);
+            });
+        }
+
     });
 </script>
 <script>
@@ -15607,6 +17175,192 @@ function renderForumPosts(posts) {
     }
     
 </script>
+<div id="novelai-settings-modal" class="modal-overlay">
+    <div class="modal-window" style="max-width: 600px; width: 90%;">
+        <h3 style="text-align: center; color: var(--primary-color);">NovelAI 生成设置</h3>
+        <span class="nai-modal-close-btn" id="close-novelai-settings">&times;</span>
+
+        <div class="nai-modal-scrollable-content">
+            <div class="form-group">
+                <label>图像尺寸（oplus可无限出小图）</label>
+                <select id="nai-resolution" class="form-group">
+                    <optgroup label="小">
+                        <option value="512x768">纵向 (512x768)</option>
+                        <option value="768x512">横向 (768x512)</option>
+                        <option value="640x640">正方形 (640x640)</option>
+                    </optgroup>
+                    <optgroup label="正常">
+                        <option value="832x1216">竖图 (832x1216)</option>
+                        <option value="1216x832">横图 (1216x832)</option>
+                        <option value="1024x1024" selected>方图 (1024x1024)</option>
+                    </optgroup>
+                    <optgroup label="壁纸">
+                        <option value="1088x1920">纵向 (1088x1920)</option>
+                        <option value="1920x1088">风景 (1920x1088)</option>
+                    </optgroup>
+                </select>
+                <small>建议使用官方支持的标准尺寸以获得最佳效果</small>
+            </div>
+            <div class="form-group">
+                <label>采样步数 (Steps)</label>
+                <input type="number" id="nai-steps" value="28" min="1" max="50" class="form-group">
+                <small>推荐值: 28 (值越高质量越好但耗时越长)</small>
+            </div>
+            <div class="form-group">
+                <label>提示词相关性 (CFG Scale)</label>
+                <input type="number" id="nai-cfg-scale" value="5" min="1" max="20" step="0.5" class="form-group">
+                <small>推荐值: 5 (控制图像与提示词的相关程度)</small>
+            </div>
+            <div class="form-group">
+                <label>采样器 (Sampler)</label>
+                <select id="nai-sampler" class="form-group">
+                    <option value="k_euler">Euler</option>
+                    <option value="k_euler_ancestral" selected>Euler Ancestral</option>
+                    <option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option>
+                    <option value="k_dpmpp_2m">DPM++ 2M</option>
+                    <option value="k_dpmpp_sde">DPM++ SDE</option>
+                    <option value="ddim">DDIM</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>随机种子 (Seed)</label>
+                <input type="number" id="nai-seed" value="-1" min="-1" max="9999999999" class="form-group">
+                <small>-1 表示随机，固定种子可复现相同图像</small>
+            </div>
+            <div class="form-group">
+                <label>负面提示词预设 (UC Preset)</label>
+                <select id="nai-uc-preset" class="form-group">
+                    <option value="0">Preset 0 - Heavy</option>
+                    <option value="1" selected>Preset 1 - Light</option>
+                    <option value="2">Preset 2 - Human Focus</option>
+                    <option value="3">Preset 3 - None</option>
+                </select>
+            </div>
+
+            <div class="form-group nai-settings-checkbox-group">
+                <label for="nai-quality-toggle">质量标签</label>
+                <label class="checkbox-container">
+                    <input type="checkbox" id="nai-quality-toggle" checked>
+                    <span>自动添加质量提升标签</span>
+                </label>
+            </div>
+            <div class="form-group nai-settings-checkbox-group">
+                <label for="nai-smea">SMEA (提升细节)</label>
+                <label class="checkbox-container">
+                    <input type="checkbox" id="nai-smea" checked>
+                    <span>启用SMEA增强</span>
+                </label>
+            </div>
+            <div class="form-group nai-settings-checkbox-group">
+                <label for="nai-smea-dyn">SMEA DYN (动态优化)</label>
+                <label class="checkbox-container">
+                    <input type="checkbox" id="nai-smea-dyn">
+                    <span>启用动态SMEA</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label>默认正面提示词</label>
+                <textarea id="nai-default-positive" rows="3" class="form-group" placeholder="masterpiece, best quality, 1girl, beautiful...">masterpiece, best quality, 1girl, beautiful, detailed face, detailed eyes, long hair, anime style</textarea>
+                <small>此提示词将在生成时自动使用（如果测试弹窗中未填写）</small>
+            </div>
+            <div class="form-group">
+                <label>默认负面提示词</label>
+                <textarea id="nai-default-negative" rows="3" class="form-group" placeholder="lowres, bad anatomy, bad hands, text, error...">lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry</textarea>
+            </div>
+            <div class="form-group" style="border-top: 1px solid #eee; padding-top: 15px; margin-top: 15px;">
+                <label>🌐 CORS 代理设置</label>
+                <select id="nai-cors-proxy" class="form-group">
+                    <option value="">❌ 直连（无代理）</option>
+                    <option value="https://corsproxy.io/?" selected>✅ corsproxy.io（推荐）</option>
+                    <option value="https://api.allorigins.win/raw?url=">allorigins.win</option>
+                    <option value="https://cors-anywhere.herokuapp.com/">cors-anywhere（需激活）</option>
+                    <option value="custom">🔧 自定义代理</option>
+                </select>
+                <small style="color: #e74c3c;">⚠️ 本地运行会遇到CORS跨域问题，需使用代理。</small>
+            </div>
+            <div id="nai-custom-proxy-group" class="form-group" style="display: none;">
+                <label>自定义代理地址</label>
+                <input type="text" id="nai-custom-proxy-url" placeholder="https://your-proxy.com/?" class="form-group">
+                <small>代理URL应以 / 或 ? 结尾，例如：https://proxy.com/?</small>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button id="reset-nai-settings-btn" class="btn btn-neutral" style="flex: 1;">恢复默认</button>
+            <button id="save-nai-settings-btn" class="btn btn-primary" style="flex: 1;">保存设置</button>
+        </div>
+    </div>
+</div>
+<div id="novelai-test-modal" class="modal-overlay">
+    <div class="modal-window" style="max-width: 700px; width: 90%;">
+        <h3 style="text-align: center; color: var(--primary-color);">🖼️ NovelAI 测试生成</h3>
+        <span class="nai-modal-close-btn" id="close-novelai-test">&times;</span>
+
+        <div class="nai-modal-scrollable-content">
+            <div class="form-group">
+                <label>正面提示词（此处提示词仅用于该弹窗测试）</label>
+                <textarea id="nai-test-prompt" rows="4" class="form-group" placeholder="1girl, solo, long hair, blue eyes, smile...">1girl, solo, long hair, blue eyes, smile, outdoors, cherry blossoms, spring</textarea>
+            </div>
+            <div class="form-group">
+                <label>负面提示词（可选，留空使用默认）</label>
+                <textarea id="nai-test-negative" rows="3" class="form-group" placeholder="留空将使用设置中的默认负面提示词"></textarea>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 10px 0; align-items: center;">
+                <button id="nai-generate-btn" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px; width: auto; margin: 0;">
+                    生成图像
+                </button>
+            </div>
+            <div id="nai-test-status" style="text-align: center; color: #666; margin: 15px 0; display: none;">
+                正在生成中，请稍候...
+            </div>
+            <div id="nai-test-result" style="display: none; margin-top: 20px;">
+                <div style="font-weight: bold; margin-bottom: 10px; color: #333;">生成结果：</div>
+                <div style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
+                    <img id="nai-result-image">
+                </div>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button id="nai-download-btn" class="btn btn-secondary" style="width: auto;">下载图像</button>
+                </div>
+            </div>
+            <div id="nai-test-error" style="display: none; margin-top: 15px; padding: 12px; background: #f8d7da; color: #721c24; border-radius: 6px; border: 1px solid #f5c6cb;"></div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button id="close-nai-test-btn" class="btn btn-neutral" style="flex: 1;">关闭</button>
+        </div>
+    </div>
+</div>
+<div id="character-nai-prompts-modal" class="modal-overlay">
+    <div class="modal-window">
+        <h3 style="text-align: center; color: var(--primary-color);">角色专属NAI提示词配置</h3>
+        <span class="nai-modal-close-btn" id="close-character-nai-prompts">&times;</span>
+
+        <div class="nai-modal-content">
+            <p style="font-size: 13px; color: #666; margin-bottom: 20px; background-color: #f0f8ff; padding: 12px; border-radius: 6px; border-left: 3px solid var(--accent-color);">
+                💡 这里配置的提示词仅用于当前角色的NAI出图。
+            </p>
+            <div class="form-group">
+                <label for="character-nai-positive" style="font-weight: 600;">
+                    正面提示词 (Positive Prompt)
+                </label>
+                <textarea id="character-nai-positive" rows="4" class="form-group" placeholder="例如: masterpiece, best quality, 1girl, beautiful..."></textarea>
+                <small>描述你希望生成的图像风格，可填入画师串</small>
+            </div>
+            <div class="form-group">
+                <label for="character-nai-negative" style="font-weight: 600;">
+                    负面提示词 (Negative Prompt)
+                </label>
+                <textarea id="character-nai-negative" rows="4" class="form-group" placeholder="例如: lowres, bad anatomy, bad hands..."></textarea>
+                <small>描述你希望避免的元素</small>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button id="reset-character-nai-prompts-btn" class="btn btn-neutral" style="flex: 1;">清空配置</button>
+            <button id="save-character-nai-prompts-btn" class="btn btn-primary" style="flex: 1;">保存</button>
+        </div>
+    </div>
+</div>
 </body>
 
 </html>

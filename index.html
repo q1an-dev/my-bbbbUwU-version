@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>章鱼喷墨机</title>
+    <title>小章鱼(Chien版)</title>
     <meta name="theme-color" content="#FFFFFF"/>
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <link rel="apple-touch-icon" href="https://i.postimg.cc/VLDv52F8/chan-21.png">
+    <link rel="apple-touch-icon" href="https://i.postimg.cc/nhRgZDFX/xiao-zhang-yu-Chien.jpg">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/dompurify@2.3.8/dist/purify.min.js"></script>
@@ -3926,46 +3926,122 @@ border-top: none;
 
     </style>
     <style>
-/* --- 表情包分类样式 --- */
+/* --- 表情包分类样式 (v3 - 匹配截图最终版) --- */
+
+/* 修复Bug 1：增大弹窗高度，释放空间 */
+#sticker-modal {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 45%; /* 增大高度 */
+    max-height: 380px; /* 增大最大高度 */
+    background: #f7f7f7;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
+    z-index: 25;
+    display: none;
+    flex-direction: column;
+}
+
+/* 修复Bug 1：iOS风格三栏式头部 (缩小字体) */
 #sticker-modal .header {
-    padding: 12px 15px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 0 15px; /* 适当的内边距 */
+    height: 44px; /* 固定头部高度 */
+    box-sizing: border-box;
     border-bottom: 1px solid #eee;
-    position: relative;
+    flex-shrink: 0;
+}
+#sticker-modal .header .header-left {
+    display: flex;
+    align-items: center;
 }
 
+#sticker-modal .header .title {
+    font-weight: 700; /* 加粗字体让标题更突出 */
+    color: var(--primary-color); /* 使用小章鱼主色 */
+    font-size: 16px; /* 稍微增大字体 */
+    margin: 0; /* 确保没有默认margin */
+    text-shadow: 0 1px 2px rgba(255, 128, 171, 0.1); /* 轻微的文字阴影 */
+}
+#sticker-modal .header .header-right {
+    display: flex;
+    gap: 6px; /* 调整间距让按钮更紧凑 */
+    align-items: center;
+}
 #sticker-modal .panel-btn {
-    background: none;
-    border: none;
-    color: var(--primary-color);
-    font-size: 15px;
-    font-weight: 500;
+    background: rgba(255, 255, 255, 0.8); /* 半透明白色背景 */
+    border: 1px solid var(--primary-color); /* 使用小章鱼主色边框 */
+    color: var(--primary-color); /* 使用小章鱼主色文字 */
+    font-size: 13px; /* 保持紧凑字体 */
+    font-weight: 600; /* 保持字体粗细 */
+    padding: 6px 12px; /* 保持紧凑padding */
+    border-radius: 15px; /* 圆润的圆角，但不要太大 */
     cursor: pointer;
-    padding: 5px;
-}
-#sticker-modal .title {
-    font-weight: 600;
-    color: var(--text-color);
-    font-size: 16px;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    transition: all 0.2s ease; /* 平滑过渡 */
+    min-width: 44px; /* 最小点击区域 */
+    height: 32px; /* 固定高度确保对齐 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 6px rgba(255, 128, 171, 0.2); /* 小章鱼配色的轻微阴影 */
 }
 
+#sticker-modal .panel-btn:hover {
+    background: var(--primary-color); /* 悬停时使用主色背景 */
+    color: white; /* 悬停时文字变白 */
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(255, 128, 171, 0.3); /* 悬停时阴影加强 */
+}
+
+#sticker-modal .panel-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(255, 128, 171, 0.2);
+    background: var(--secondary-color); /* 点击时使用次要色 */
+    color: white;
+}
+
+/* 特殊状态按钮样式 - 使用小章鱼配色 */
+#sticker-modal .panel-btn.btn-primary {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+#sticker-modal .panel-btn.btn-primary:hover {
+    background: var(--secondary-color);
+    border-color: var(--secondary-color);
+    box-shadow: 0 3px 12px rgba(244, 143, 177, 0.4);
+}
+
+#sticker-modal .panel-btn.btn-danger {
+    background: #FF6B6B; /* 温和的红色 */
+    color: white;
+    border-color: #FF6B6B;
+}
+
+#sticker-modal .panel-btn.btn-danger:hover {
+    background: #FF5252; /* 悬停时深一点的红色 */
+    border-color: #FF5252;
+    box-shadow: 0 3px 12px rgba(255, 107, 107, 0.4);
+}
+
+/* 分类标签栏 (匹配 image_aef7d4.jpg) */
 #sticker-category-tabs {
     display: flex;
     overflow-x: auto;
     padding: 0 15px;
     border-bottom: 1px solid #eee;
-    gap: 18px;
+    gap: 20px;
+    flex-shrink: 0;
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
-#sticker-category-tabs::-webkit-scrollbar {
-    display: none;
-}
+#sticker-category-tabs::-webkit-scrollbar { display: none; }
 #sticker-category-tabs .tab-item {
     padding: 10px 0 8px 0;
     font-size: 15px;
@@ -3981,12 +4057,14 @@ border-top: none;
     border-bottom-color: var(--primary-color);
 }
 
+/* 搜索框 (匹配 image_aef7d4.jpg) */
 #sticker-search-container {
-    padding: 10px 15px;
+    padding: 12px 15px;
+    flex-shrink: 0;
 }
 #sticker-search-input {
     width: 100%;
-    padding: 10px 15px;
+    padding: 12px 16px;
     border-radius: 10px;
     border: none;
     background: #f0f0f0;
@@ -3998,41 +4076,199 @@ border-top: none;
     background: #e9e9e9;
 }
 
+/* 表情网格 (修复Bug 1: 确保可滚动) */
+.sticker-grid {
+    flex-grow: 1; /* 占据剩余所有空间 */
+    overflow-y: auto;
+    padding: 15px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 15px;
+}
+
+/* 修复Bug 2: 管理模式底栏样式 (匹配 image_c7fbc3.png) */
+#sticker-manage-bar {
+    display: none; /* 默认隐藏 */
+    flex-direction: row;
+    justify-content: flex-end; /* 修改：将控件组移动到右侧 */
+    gap: 20px; /* 新增：在"全选"和"删除"之间增加间距 */
+    align-items: center;
+    padding: 15px 20px; /* 增加padding */
+    padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* 适配 iPhone X */
+    border-top: 1px solid #e8e8e8;
+    background: #fafafa;
+    flex-shrink: 0;
+    min-height: 60px; /* 增加高度以适应36px的按钮和合适的padding */
+    width: 100%; /* 确保占满宽度 */
+    box-sizing: border-box; /* 确保padding不影响总宽度 */
+}
+#sticker-manage-bar label {
+    display: flex;
+    align-items: center;
+    gap: 12px; /* 增加复选框和文字的间距 */
+    color: #333;
+    font-size: 15px;
+    font-weight: 500;
+    height: 40px; /* 增加高度到40px */
+    margin: 0; /* 确保没有默认margin */
+}
+#sticker-manage-bar #delete-selected-stickers-btn {
+    width: auto;
+    height: 40px; /* 与新的label高度一致 */
+    padding: 0 32px; /* 增加padding让按钮更宽 */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px; /* 圆角设计，匹配高度 */
+    font-size: 15px;
+    font-weight: 600;
+    min-width: 270px; /* 修复：按照要求设置为200px，让按钮更长更和谐 */
+    background: var(--primary-color); /* 使用小章鱼的主色 */
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(255, 128, 171, 0.3); /* 小章鱼配色的阴影 */
+}
+
+#sticker-manage-bar #delete-selected-stickers-btn:hover {
+    background: var(--secondary-color); /* 悬停时使用次要色 */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 128, 171, 0.4);
+}
+
+#sticker-manage-bar #delete-selected-stickers-btn:disabled {
+    background: #ccc; /* 禁用状态 */
+    color: #999;
+    box-shadow: none;
+    transform: none;
+}
+
+/* 修复Bug 3: 分类管理弹窗 (匹配 image_aef794.jpg / image_c7ffbf.png) */
+#sticker-category-manager-modal .form-group {
+    margin-bottom: 10px;
+}
+#sticker-category-manager-modal .form-group input {
+    background-color: #f0f0f0;
+    border: 1px solid #f0f0f0;
+    padding: 12px;
+}
+#sticker-category-manager-modal .form-group input:focus {
+    background-color: #fff;
+    border: 1px solid var(--primary-color);
+}
+#sticker-category-manager-modal .btn-primary {
+    padding: 12px 18px;
+    height: 46px; /* 匹配输入框高度 */
+}
+#existing-categories-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 40vh;
+    overflow-y: auto;
+    border-top: 1px solid #f0f0f0;
+    margin-top: 25px;
+    padding-top: 25px;
+}
 #existing-categories-list .category-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px;
-    border-radius: 8px;
-    transition: background-color 0.2s;
-}
-#existing-categories-list .category-item:hover {
-    background-color: #f9f9f9;
+    padding: 12px 15px;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #f0f0f0;
 }
 #existing-categories-list .category-name {
     font-size: 15px;
     font-weight: 500;
     color: #333;
 }
-#existing-categories-list .category-actions {
-    display: flex;
-    gap: 8px;
-}
-#existing-categories-list .category-actions button {
-    background: none;
+#existing-categories-list .category-delete-btn {
+    background: #f0f0f0;
     border: none;
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--primary-color);
-    padding: 4px;
-}
-#existing-categories-list .category-actions button.danger {
     color: #ef5350;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 16px;
+    line-height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-#existing-categories-list .category-item[data-category="全部"] .category-actions,
-#existing-categories-list .category-item[data-category="未分类"] .category-actions {
+/* (Bug 3 核心修复) 隐藏默认分类的操作按钮 */
+#existing-categories-list .category-item[data-category="全部"] .category-delete-btn,
+#existing-categories-list .category-item[data-category="未分类"] .category-delete-btn {
     display: none;
 }
+/* (Bug 3 核心修复) 隐藏默认分类的列表项 (匹配 image_c7ffbf.png) */
+#existing-categories-list .category-item[data-category="全部"],
+#existing-categories-list .category-item[data-category="未分类"] {
+    display: none;
+}
+
+/* 修复: 上传弹窗按钮间距 (匹配 image_aefafb.png) */
+#add-sticker-form p {
+    margin: 15px 0 15px;
+}
+#add-sticker-form .btn-secondary {
+    margin-bottom: 10px;
+}
+
+/* 优化: 上传界面间距 - 让表单更紧凑 */
+#add-sticker-form .form-group {
+    margin-bottom: 12px; /* 进一步减小到12px */
+}
+#add-sticker-form .form-group label {
+    margin-bottom: 4px; /* 进一步减小到4px */
+}
+#add-sticker-form .form-group:last-of-type {
+    margin-bottom: 8px; /* 最后一个表单组间距更小 */
+}
+
+/* 优化: 批量导入弹窗的间距 */
+#batch-add-sticker-form .form-group {
+    margin-bottom: 20px;
+}
+#batch-add-sticker-form .form-group:last-of-type {
+    margin-bottom: 15px; /* 减少分类选择与按钮之间的间距 */
+}
+#batch-add-sticker-form .btn-primary {
+    margin-top: 8px; /* 微调按钮间距 */
+}
+
+/* iOS风格的分隔符 */
+.or-divider {
+    position: relative;
+    text-align: center;
+    margin: 20px 0 15px;
+    color: #8e8e93;
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.or-divider::before,
+.or-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: calc(50% - 30px);
+    height: 1px;
+    background: #e8e8e8;
+}
+
+.or-divider::before {
+    left: 0;
+}
+
+.or-divider::after {
+    right: 0;
+}
+
     </style>
     <style id="global-css-style"></style>
     <style>
@@ -4920,9 +5156,10 @@ border-top: none;
         </div>
         <div id="sticker-modal">
             <div class="header">
-                <button class="panel-btn" id="close-sticker-panel-btn">取消</button>
-                <span class="title">我的表情</span>
-                <div style="display: flex; gap: 8px;">
+                <div class="header-left">
+                    <span class="title">我的表情</span>
+                </div>
+                <div class="header-right">
                     <button class="panel-btn" id="sticker-category-manage-btn">分类</button>
                     <button class="panel-btn" id="manage-stickers-btn">管理</button>
                     <button class="panel-btn" id="batch-add-sticker-btn">批量</button>
@@ -4934,8 +5171,12 @@ border-top: none;
                 <input type="search" id="sticker-search-input" placeholder="搜索表情名称...">
             </div>
             <div class="sticker-grid" id="sticker-grid-container"></div>
-            <div id="sticker-manage-bar" style="display: none; padding: 10px; border-top: 1px solid #eee; background: #f7f7f7;">
-                <button class="btn btn-danger" id="delete-selected-stickers-btn" style="width: 100%;">删除已选 (0)</button>
+            <div id="sticker-manage-bar">
+                <label>
+                    <input type="checkbox" id="sticker-select-all-checkbox">
+                    全选
+                </label>
+                <button class="btn btn-danger" id="delete-selected-stickers-btn">删除 (0)</button>
             </div>
         </div>
         <!-- NEW: Chat Expansion Panel -->
@@ -4945,22 +5186,7 @@ border-top: none;
             </div>
         </div>
     </div>
-    <div id="sticker-category-manager-modal" class="modal-overlay">
-        <div class="modal-window" style="max-width: 340px;">
-            <h3 style="text-align: center; color: var(--primary-color);">管理表情分类</h3>
-            <form id="add-category-form" class="form-group">
-                <label for="new-category-name-input">新建分类</label>
-                <div style="display: flex; gap: 10px;">
-                    <input type="text" id="new-category-name-input" class="form-group" placeholder="输入分类名..." style="flex-grow: 1; margin-bottom: 0;">
-                    <button type="submit" id="add-new-category-btn" class="btn btn-primary" style="width: auto; padding: 10px 15px; margin-bottom: 0; flex-shrink: 0;">添加</button>
-                </div>
-            </form>
-            <hr style="opacity: 0.2; margin: 20px 0;">
-            <div id="existing-categories-list" style="display: flex; flex-direction: column; gap: 5px; max-height: 40vh; overflow-y: auto;"></div>
-            <button id="close-category-manager-btn" class="btn btn-neutral" style="margin-top: 20px;">完成</button>
-        </div>
-    </div>
-
+  
     <div id="world-book-screen" class="screen">
         <header class="app-header">
             <button class="back-btn" data-target="home-screen">‹</button>
@@ -5083,7 +5309,7 @@ border-top: none;
                                                                                              id="sticker-url-input"
                                                                                              placeholder="粘贴图片URL">
                 </div>
-                <p style="text-align:center; color:#888; margin: -10px 0 15px;">或</p><input type="file"
+                <div class="or-divider">或</div><input type="file"
                                                                                              id="sticker-file-upload"
                                                                                              accept="image/*"
                                                                                              style="display:none;"><label
@@ -13570,10 +13796,10 @@ return `${seconds}秒`;
             manageStickersBtn.addEventListener('click', () => {
                 isStickerManageMode = !isStickerManageMode;
                 if (isStickerManageMode) {
-                    manageStickersBtn.textContent = '取消';
+                    manageStickersBtn.textContent = '完成';
                     manageStickersBtn.classList.remove('btn-neutral');
                     manageStickersBtn.classList.add('btn-primary');
-                    stickerManageBar.style.display = 'block';
+                    stickerManageBar.style.display = 'flex';
                     stickerActionSheet.classList.remove('visible'); // 如果操作菜单是开的，则关掉
                 } else {
                     manageStickersBtn.textContent = '管理';
@@ -13581,38 +13807,152 @@ return `${seconds}秒`;
                     manageStickersBtn.classList.add('btn-neutral');
                     stickerManageBar.style.display = 'none';
                     selectedStickerIds.clear();
+
+                    // 重置全选复选框状态
+                    const selectAllCheckbox = document.getElementById('sticker-select-all-checkbox');
+                    if (selectAllCheckbox) {
+                        selectAllCheckbox.checked = false;
+                        selectAllCheckbox.indeterminate = false;
+                    }
                 }
                 updateDeleteSelectedBtn();
                 renderStickerGrid();
             });
 
-            deleteSelectedStickersBtn.addEventListener('click', async () => {
-                if (selectedStickerIds.size === 0) {
-                    showToast('请先选择要删除的表情');
-                    return;
+            // 按照EPhone方式：统一的事件委托处理
+            document.addEventListener('click', async (e) => {
+                // 处理表情包网格点击（优先级最高）
+                if (e.target.closest('#sticker-grid-container')) {
+                    // 处理表情包点击（管理模式）
+                    console.log('Click detected in sticker grid - isManageMode:', isStickerManageMode, 'target:', e.target.className);
+
+                    if (isStickerManageMode && e.target.closest('.sticker-item')) {
+                        e.preventDefault(); // 阻止默认行为
+                        e.stopPropagation(); // 阻止事件冒泡
+
+                        const stickerItem = e.target.closest('.sticker-item');
+                        const stickerId = stickerItem.dataset.stickerId;
+
+                        console.log('Sticker item found:', stickerItem, 'stickerId:', stickerId);
+
+                        if (stickerId) {
+                            console.log('Sticker clicked via delegation:', stickerId, 'Selected before:', selectedStickerIds.has(stickerId));
+
+                            if (selectedStickerIds.has(stickerId)) {
+                                selectedStickerIds.delete(stickerId);
+                                stickerItem.classList.remove('is-selected');
+                                console.log('Deselected sticker:', stickerId);
+                            } else {
+                                selectedStickerIds.add(stickerId);
+                                stickerItem.classList.add('is-selected');
+                                console.log('Selected sticker:', stickerId);
+                            }
+
+                            console.log('Selected stickers after click:', selectedStickerIds.size);
+                            updateDeleteSelectedBtn();
+                            return; // 处理完表情包点击后直接返回
+                        } else {
+                            console.error('No stickerId found on sticker item!');
+                        }
+                    } else {
+                        console.log('Click in sticker grid but not on sticker item or not in manage mode');
+                    }
                 }
-                if (confirm(`确定要删除这 ${selectedStickerIds.size} 个表情吗？`)) {
-                    db.myStickers = db.myStickers.filter(s => !selectedStickerIds.has(s.id));
-                    await saveData();
-                    showToast('表情已删除');
-                    // 退出管理模式
-                    isStickerManageMode = false;
-                    manageStickersBtn.textContent = '管理';
-                    manageStickersBtn.classList.remove('btn-primary');
-                    manageStickersBtn.classList.add('btn-neutral');
-                    stickerManageBar.style.display = 'none';
-                    selectedStickerIds.clear();
-                    renderStickerGrid();
+
+                // 处理删除按钮点击
+                if (e.target && e.target.id === 'delete-selected-stickers-btn') {
+                    if (selectedStickerIds.size === 0) {
+                        showToast('请先选择要删除的表情');
+                        return;
+                    }
+                    if (confirm(`确定要删除这 ${selectedStickerIds.size} 个表情吗？`)) {
+                        db.myStickers = db.myStickers.filter(s => !selectedStickerIds.has(s.id));
+                        await saveData();
+                        showToast('表情已删除');
+
+                        // 退出管理模式
+                        isStickerManageMode = false;
+
+                        // 重新获取按钮引用，避免变量遮蔽
+                        const manageBtn = document.getElementById('manage-stickers-btn');
+                        const manageBar = document.getElementById('sticker-manage-bar');
+
+                        if (manageBtn) {
+                            manageBtn.textContent = '管理';
+                            manageBtn.classList.remove('btn-primary');
+                            manageBtn.classList.add('btn-neutral');
+                        }
+
+                        if (manageBar) {
+                            manageBar.style.display = 'none';
+                        }
+
+                        selectedStickerIds.clear();
+                        updateDeleteSelectedBtn();
+                        renderStickerGrid();
+                    }
                 }
             });
 
             function updateDeleteSelectedBtn() {
-                deleteSelectedStickersBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
-                deleteSelectedStickersBtn.disabled = selectedStickerIds.size === 0;
+                console.log('updateDeleteSelectedBtn called, selected count:', selectedStickerIds.size); // 调试日志
+                // 每次都重新获取按钮元素引用，彻底避免变量遮蔽问题
+                const deleteSelectedStickersBtn = document.getElementById('delete-selected-stickers-btn');
+                if (deleteSelectedStickersBtn) {
+                    deleteSelectedStickersBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
+                    deleteSelectedStickersBtn.disabled = selectedStickerIds.size === 0;
+                    console.log('Button text updated to:', deleteSelectedStickersBtn.textContent); // 调试日志
+                } else {
+                    console.error('deleteSelectedStickersBtn element not found!'); // 调试日志
+                }
+
+                // 更新全选复选框的状态
+                const selectAllCheckbox = document.getElementById('sticker-select-all-checkbox');
+                const currentStickers = document.querySelectorAll('#sticker-grid-container .sticker-item');
+                const totalStickers = currentStickers.length;
+                const selectedStickers = selectedStickerIds.size;
+
+                if (selectAllCheckbox) {
+                    if (selectedStickers === 0) {
+                        selectAllCheckbox.checked = false;
+                        selectAllCheckbox.indeterminate = false;
+                    } else if (selectedStickers === totalStickers && totalStickers > 0) {
+                        selectAllCheckbox.checked = true;
+                        selectAllCheckbox.indeterminate = false;
+                    } else {
+                        // 修复：部分选中时不显示半选中状态，保持空框
+                        selectAllCheckbox.checked = false;
+                        selectAllCheckbox.indeterminate = false; // 不显示半选中状态
+                    }
+                    console.log('SelectAll checkbox updated:', selectAllCheckbox.checked, 'indeterminate:', selectAllCheckbox.indeterminate); // 调试日志
+                }
             }
 
+            // 按照EPhone方式：使用事件委托避免变量遮蔽
+            document.addEventListener('change', (e) => {
+                if (e.target && e.target.id === 'sticker-select-all-checkbox') {
+                    const isChecked = e.target.checked;
+                    const currentStickers = document.querySelectorAll('#sticker-grid-container .sticker-item');
+
+                    currentStickers.forEach(item => {
+                        const stickerId = item.dataset.stickerId;
+                        if (stickerId) {
+                            if (isChecked) {
+                                selectedStickerIds.add(stickerId);
+                                item.classList.add('is-selected');
+                            } else {
+                                selectedStickerIds.delete(stickerId);
+                                item.classList.remove('is-selected');
+                            }
+                        }
+                    });
+
+                    updateDeleteSelectedBtn();
+                }
+            });
+
             batchAddStickerBtn.addEventListener('click', () => {
-                if (typeof populateCategorySelects === 'function') populateCategorySelects();
+                populateCategorySelects(); // 填充分类下拉
                 batchAddStickerModal.classList.add('visible');
                 stickerUrlsTextarea.value = '';
             });
@@ -13655,8 +13995,7 @@ return `${seconds}秒`;
                 }
 
                 if (newStickers.length > 0) {
-                    const catSelect = document.getElementById('batch-sticker-category-select');
-                    const category = catSelect ? catSelect.value : '未分类';
+                    const category = document.getElementById('batch-sticker-category-select').value || '未分类';
                     newStickers.forEach(s => s.category = category);
                     db.myStickers.push(...newStickers);
                     await saveData();
@@ -13683,12 +14022,88 @@ return `${seconds}秒`;
                     renderStickerGrid();
                 }
             });
+            // 添加分类管理功能
+            const categoryManageBtn = document.getElementById('sticker-category-manage-btn');
+            const categoryModal = document.getElementById('sticker-category-manager-modal');
+            const closeCategoryModalBtn = document.getElementById('close-category-manager-btn');
+            const addCategoryForm = document.getElementById('add-category-form');
+            const newCategoryInput = document.getElementById('new-category-name-input');
+            const categoryListContainer = document.getElementById('existing-categories-list');
+
+            categoryManageBtn.addEventListener('click', () => {
+                renderCategoryList();
+                categoryModal.classList.add('visible');
+            });
+
+            closeCategoryModalBtn.addEventListener('click', () => {
+                categoryModal.classList.remove('visible');
+                renderStickerTabs(); // 刷新主弹窗的标签栏
+                populateCategorySelects(); // 刷新上传弹窗的下拉菜单
+            });
+
+            addCategoryForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const newName = newCategoryInput.value.trim();
+                if (newName && !db.stickerCategories.includes(newName)) {
+                    db.stickerCategories.push(newName);
+                    await saveData();
+                    renderCategoryList();
+                    newCategoryInput.value = '';
+                } else if (!newName) {
+                    showToast('分类名不能为空');
+                } else {
+                    showToast('分类名已存在');
+                }
+            });
+
+            function renderCategoryList() {
+                categoryListContainer.innerHTML = '';
+                db.stickerCategories.forEach(category => {
+                    const item = document.createElement('div');
+                    item.className = 'category-item';
+                    item.dataset.category = category;
+
+                    item.innerHTML = `
+                        <span class="category-name">${category}</span>
+                        <button class="category-delete-btn" data-category="${category}">×</button>
+                    `;
+                    categoryListContainer.appendChild(item);
+                });
+
+                categoryListContainer.querySelectorAll('.category-delete-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const nameToDelete = e.target.dataset.category;
+                        if (nameToDelete === '全部' || nameToDelete === '未分类') return;
+
+                        if (confirm(`确定要删除分类 "${nameToDelete}" 吗？\n该分类下的表情将被移动到 "未分类"。`)) {
+                            db.stickerCategories = db.stickerCategories.filter(cat => cat !== nameToDelete);
+                            db.myStickers.forEach(sticker => {
+                                if (sticker.category === nameToDelete) {
+                                    sticker.category = '未分类';
+                                }
+                            });
+                            await saveData();
+                            renderCategoryList();
+                        }
+                    });
+                });
+            }
+
+            // 搜索功能
+            const stickerSearchInput = document.getElementById('sticker-search-input');
+            stickerSearchInput.addEventListener('input', (e) => {
+                currentStickerSearchTerm = e.target.value;
+                renderStickerGrid();
+            });
+
             addNewStickerBtn.addEventListener('click', () => {
                 addStickerModalTitle.textContent = '添加新表情';
                 addStickerForm.reset();
                 stickerEditIdInput.value = '';
                 stickerPreview.innerHTML = '<span>预览</span>';
                 stickerUrlInput.disabled = false;
+                if (typeof populateCategorySelects === 'function') populateCategorySelects();
                 addStickerModal.classList.add('visible');
             });
             addStickerForm.addEventListener('submit', async (e) => {
@@ -13759,7 +14174,7 @@ return `${seconds}秒`;
                 if (!currentStickerActionTarget) return;
                 const sticker = db.myStickers.find(s => s.id === currentStickerActionTarget);
                 if (sticker) {
-                    if (confirm(`确定要删除表情“${sticker.name}”吗？`)) {
+                    if (confirm(`确定要删除表情"${sticker.name}"吗？`)) {
                         db.myStickers = db.myStickers.filter(s => s.id !== currentStickerActionTarget);
                         await saveData();
                         renderStickerGrid();
@@ -13796,69 +14211,82 @@ return `${seconds}秒`;
             });
         }
 
-        function renderStickerGrid() {
-            // render tabs every time to refresh active state
-            renderStickerTabs();
-            stickerGridContainer.innerHTML = '';
-            const lowerSearch = (currentStickerSearchTerm || '').toLowerCase();
-            const filtered = (db.myStickers || []).filter(sticker => {
-                const category = sticker.category || '未分类';
-                const catOk = (currentStickerCategory === '全部') || (category === currentStickerCategory);
-                const nameOk = (sticker.name || '').toLowerCase().includes(lowerSearch);
-                return catOk && nameOk;
-            });
+        /**
+ * (替换) 渲染表情包网格 (v3 - 修复Bug 2)
+ */
+function renderStickerGrid() {
+    // 1. 渲染分类标签栏 (每次都重新渲染以更新 active 状态)
+    renderStickerTabs();
 
-            if (filtered.length === 0) {
-                let placeholderText = '这个分类下还没有表情哦~';
-                if (currentStickerSearchTerm) placeholderText = '未找到匹配的表情';
-                else if ((currentStickerCategory === '全部') && (!db.myStickers || db.myStickers.length === 0)) placeholderText = '还没有表情包，快去上传吧！';
-                stickerGridContainer.innerHTML = `<p style="color:#aaa; text-align:center; grid-column: 1 / -1;">${placeholderText}</p>`;
-                return;
-            }
-            filtered.forEach(sticker => {
-                const item = document.createElement('div');
-                item.className = 'sticker-item';
-                item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${sticker.name}</span>`;
+    // 2. 过滤表情包
+    const stickerGridContainer = document.getElementById('sticker-grid-container');
+    if (!stickerGridContainer) return;
+    stickerGridContainer.innerHTML = '';
 
-                if (isStickerManageMode) {
-                    item.classList.add('is-managing');
-                    if (selectedStickerIds.has(sticker.id)) {
-                        item.classList.add('is-selected');
-                    }
-                    // 在管理模式下，单击是选择/取消选择
-                    item.addEventListener('click', () => {
-                        if (selectedStickerIds.has(sticker.id)) {
-                            selectedStickerIds.delete(sticker.id);
-                            item.classList.remove('is-selected');
-                        } else {
-                            selectedStickerIds.add(sticker.id);
-                            item.classList.add('is-selected');
-                        }
-                        // 更新底部删除按钮的计数
-                        const deleteBtn = document.getElementById('delete-selected-stickers-btn');
-                        deleteBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
-                        deleteBtn.disabled = selectedStickerIds.size === 0;
-                    });
-                } else {
-                    // 非管理模式下的原始逻辑
-                    item.addEventListener('click', () => sendSticker(sticker));
-                    item.addEventListener('contextmenu', (e) => { // 使用 contextmenu 替代 mousedown
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleStickerLongPress(sticker.id);
-                    });
-                    item.addEventListener('touchstart', (e) => {
-                        e.stopPropagation();
-                        longPressTimer = setTimeout(() => {
-                            handleStickerLongPress(sticker.id);
-                        }, 500);
-                    });
-                    item.addEventListener('touchend', () => clearTimeout(longPressTimer));
-                    item.addEventListener('touchmove', () => clearTimeout(longPressTimer));
-                }
-                stickerGridContainer.appendChild(item);
-            });
+    const lowerSearchTerm = currentStickerSearchTerm.toLowerCase();
+
+    const filteredStickers = db.myStickers.filter(sticker => {
+        // 检查分类
+        const category = sticker.category || '未分类';
+        const categoryMatch = (currentStickerCategory === '全部') || (category === currentStickerCategory);
+        if (!categoryMatch) return false;
+
+        // 检查搜索词
+        const nameMatch = sticker.name.toLowerCase().includes(lowerSearchTerm);
+        if (!nameMatch) return false;
+
+        return true;
+    });
+
+    // 3. 渲染过滤后的表情包
+    if (filteredStickers.length === 0) {
+        let placeholderText = '这个分类下还没有表情哦~';
+        if (currentStickerSearchTerm) {
+            placeholderText = '未找到匹配的表情';
+        } else if (currentStickerCategory === '全部' && db.myStickers.length === 0) {
+            placeholderText = '还没有表情包，快去上传吧！';
         }
+        stickerGridContainer.innerHTML = `<p style="color:#aaa; text-align:center; grid-column: 1 / -1;">${placeholderText}</p>`;
+    } else {
+        filteredStickers.forEach(sticker => {
+            const item = document.createElement('div');
+            item.className = 'sticker-item';
+            item.dataset.stickerId = sticker.id; // 添加data-stickerId属性用于全选功能
+            item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${DOMPurify.sanitize(sticker.name)}</span>`;
+
+            if (isStickerManageMode) {
+                item.classList.add('is-managing');
+                if (selectedStickerIds.has(sticker.id)) {
+                    item.classList.add('is-selected');
+                }
+                // 按照EPhone方式：不在这里绑定事件，使用全局事件委托
+            } else {
+                // 非管理模式下的原始逻辑
+                item.addEventListener('click', () => sendSticker(sticker));
+                item.addEventListener('contextmenu', (e) => { // 使用 contextmenu 替代 mousedown
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleStickerLongPress(sticker.id);
+                });
+                item.addEventListener('touchstart', (e) => {
+                    e.stopPropagation();
+                    longPressTimer = setTimeout(() => {
+                        handleStickerLongPress(sticker.id);
+                    }, 500);
+                });
+                item.addEventListener('touchend', () => clearTimeout(longPressTimer));
+                item.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+            }
+            stickerGridContainer.appendChild(item);
+        });
+    }
+
+    // 修复Bug 2：在管理模式下，每次重新渲染都要更新"全选"复选框的状态
+    if (isStickerManageMode) {
+        // 直接调用updateDeleteSelectedBtn，函数内部会重新获取元素引用
+        updateDeleteSelectedBtn();
+    }
+}
 
         function handleStickerLongPress(stickerId) {
             if (isStickerManageMode) return;
@@ -17575,6 +18003,23 @@ function renderForumPosts(posts) {
             <button id="reset-character-nai-prompts-btn" class="btn btn-neutral" style="flex: 1;">清空配置</button>
             <button id="save-character-nai-prompts-btn" class="btn btn-primary" style="flex: 1;">保存</button>
         </div>
+    </div>
+</div>
+
+<!-- 分类管理弹窗 -->
+<div id="sticker-category-manager-modal" class="modal-overlay">
+    <div class="modal-window" style="max-width: 360px;">
+        <h3 style="text-align: center; color: var(--text-color); margin-bottom: 25px;">管理表情分类</h3>
+        <form id="add-category-form" class="form-group">
+            <label for="new-category-name-input" style="color: var(--secondary-color); font-weight: 600;">新建分类</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="new-category-name-input" class="form-group" placeholder="输入分类名..." style="flex-grow: 1; margin-bottom: 0;">
+                <button type="submit" id="add-new-category-btn" class="btn btn-primary" style="width: auto; padding: 10px 18px; margin-bottom: 0; flex-shrink: 0;">添加</button>
+            </div>
+        </form>
+        <div id="existing-categories-list">
+            </div>
+        <button id="close-category-manager-btn" class="btn btn-primary" style="margin-top: 25px;">完成</button>
     </div>
 </div>
 </body>

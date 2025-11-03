@@ -6929,95 +6929,132 @@ return `${seconds}秒`;
                     let itemContent = item.content.trim();
                     let naiImageHandled = false; // NAI 消息处理标记
 
-                    // ▼▼▼ 新增：NAI 主动发图拦截 ▼▼▼
-                    if (localStorage.getItem('novelai-enabled') === 'true' && itemContent.startsWith('{') && itemContent.endsWith('}')) {
+                    // ▼▼▼ 新增：NAI 主动发图拦截（改进版 - 更健壮的检查） ▼▼▼
+                    // 检查item.content是否是一个NAI JSON指令
+                    let naiData = null;
+                    if (item.type === 'text' && itemContent.includes('"type": "naiimag"')) {
                         try {
-                            const parsed = JSON.parse(itemContent);
-
-                            // 检查是否是 NAI 发图指令
-                            if (parsed.type === 'naiimag' && parsed.prompt) {
-                                naiImageHandled = true; // 标记此消息已处理
-                                let senderId = undefined;
-                                let senderName = (chat.realName || chat.name);
-
-                                // 确定发送者 (私聊 vs 群聊)
-                                if (targetChatType === 'private') {
-                                    // 私聊，发送者就是 AI 自己
-                                } else if (targetChatType === 'group') {
-                                    // 群聊，从 "name" 字段匹配 AI 成员
-                                    const aiSender = chat.members.find(m => m.realName === parsed.name);
-                                    if (aiSender) {
-                                        senderId = aiSender.id;
-                                        senderName = aiSender.groupNickname;
-                                    } else {
-                                        // 备用方案：随机一个 AI 成员
-                                        const aiMembers = chat.members;
-                                        const randomSender = aiMembers[Math.floor(Math.random() * aiMembers.length)];
-                                        senderId = randomSender.id;
-                                        senderName = randomSender.groupNickname;
-                                    }
-                                }
-
-                                // 1. 先发送一个"正在作画"的提示消息
-                                const tempMessageId = `msg_nai_pending_${Date.now()}`;
-                                const tempMessage = {
-                                    id: tempMessageId,
-                                    role: 'assistant',
-                                    content: `[${senderName}的消息：NAI 正在作画中... 🎨]`,
-                                    parts: [{type: 'text', text: `[${senderName}的消息：NAI 正在作画中... 🎨]`}],
-                                    timestamp: Date.now(),
-                                    senderId: senderId
-                                };
-
-                                chat.history.push(tempMessage);
-                                addMessageBubble(tempMessage, targetChatId, targetChatType);
-                                await saveData();
-                                renderChatList(); // 更新列表显示"正在作画"
-
+                            // 尝试解析这个JSON
+                            naiData = JSON.parse(itemContent);
+                        } catch (e) {
+                            // 如果不是一个完整的JSON对象，尝试从内容中提取JSON部分
+                            const jsonMatch = itemContent.match(/\{[^{}]*"type"\s*:\s*"naiimag"[^{}]*\}/);
+                            if (jsonMatch) {
                                 try {
-                                    // 2. 调用 NAI 生成函数 (传入了 senderIdOverride)
-                                    const imageDataUrl = await generateNovelAIImageForChat(parsed.prompt, targetChatId, targetChatType, senderId);
-
-                                    // 3. 创建 NAI 消息
-                                    const naiMessage = {
-                                        id: `msg_nai_${Date.now()}`,
-                                        role: 'assistant',
-                                        type: 'naiimag', // ★★★ 关键类型
-                                        content: `[${senderName}的消息：${parsed.prompt}]`, // 保留提示词作为描述
-                                        imageUrl: imageDataUrl, // 图像的 Data URL
-                                        fullPrompt: parsed.prompt,
-                                        timestamp: Date.now(),
-                                        senderId: senderId
-                                    };
-
-                                    // 4. 替换掉"正在作画"的消息
-                                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
-                                    if (tempMsgIndex > -1) {
-                                        chat.history.splice(tempMsgIndex, 1, naiMessage); // 替换
-                                    } else {
-                                        chat.history.push(naiMessage); // 备用方案
-                                    }
-
-                                    // 5. 重新渲染
-                                    currentPage = 1;
-                                    renderMessages(false, true);
-
-                                } catch (error) {
-                                    // 6. 处理失败
-                                    console.error('NAI 聊天作画失败:', error);
-                                    const errorMsg = `[${senderName}的消息：作画失败 😥: ${error.message}]`;
-                                    const tempMsgIndex = chat.history.findIndex(m => m.id === tempMessageId);
-                                    if (tempMsgIndex > -1) {
-                                        chat.history[tempMsgIndex].content = errorMsg;
-                                        chat.history[tempMsgIndex].parts = [{type: 'text', text: errorMsg}];
-                                        currentPage = 1;
-                                        renderMessages(false, true);
-                                    }
+                                    naiData = JSON.parse(jsonMatch[0]);
+                                } catch (e2) {
+                                    // JSON解析失败，naiData 保持 null
+                                    console.warn("NAI：检测到 'naiimag' 文本，但JSON解析失败。", e2);
                                 }
                             }
-                        } catch (e) {
-                            // JSON 解析失败，不是 NAI 指令，什么也不做，让它走后续的文本逻辑
                         }
+                    }
+
+                    // 如果上述方法都失败，回退到原有的检查方式（兼容旧代码）
+                    if (!naiData && localStorage.getItem('novelai-enabled') === 'true' && itemContent.startsWith('{') && itemContent.endsWith('}')) {
+                        try {
+                            const parsed = JSON.parse(itemContent);
+                            if (parsed.type === 'naiimag' && parsed.prompt) {
+                                naiData = parsed;
+                            }
+                        } catch (e) {
+                            // JSON 解析失败，naiData 保持 null
+                        }
+                    }
+
+                    if (naiData && naiData.type === 'naiimag' && naiData.prompt) {
+                        naiImageHandled = true; // 标记此消息已处理
+                        let senderId = null;
+                        let senderName = '';
+
+                        // 确定发送者名称
+                        if (targetChatType === 'private') {
+                            senderName = chat.realName || chat.name; // 单聊时，发送者是角色自己
+                        } else if (targetChatType === 'group') {
+                            // 群聊，从 "name" 字段匹配 AI 成员（如果JSON中有name字段）
+                            if (naiData.name) {
+                                const aiSender = chat.members.find(m => m.realName === naiData.name || m.groupNickname === naiData.name);
+                                if (aiSender) {
+                                    senderId = aiSender.id;
+                                    senderName = aiSender.groupNickname || aiSender.realName;
+                                }
+                            }
+                            // 如果匹配失败，使用第一个AI成员作为备用方案
+                            if (!senderId) {
+                                const firstAiMember = chat.members.find(m => m.id !== 'user_me');
+                                if (firstAiMember) {
+                                    senderId = firstAiMember.id;
+                                    senderName = firstAiMember.groupNickname || firstAiMember.realName;
+                                } else {
+                                    senderName = '群聊'; // 备用
+                                }
+                            }
+                        }
+
+                        // 1. 先发送一个"正在作画"的提示消息
+                        const tempMessageId = `msg_nai_pending_${Date.now()}`;
+                        const tempMessage = {
+                            id: tempMessageId,
+                            role: 'assistant',
+                            content: `[${senderName}的消息：NAI 正在作画中... 🎨]`,
+                            parts: [{type: 'text', text: `[${senderName}的消息：NAI 正在作画中... 🎨]`}],
+                            timestamp: Date.now(),
+                            senderId: senderId,
+                            isTemporary: true // 标记为临时
+                        };
+
+                        chat.history.push(tempMessage);
+                        addMessageBubble(tempMessage, targetChatId, targetChatType);
+                        await saveData();
+                        renderChatList(); // 更新列表显示"正在作画"
+
+                        // 使用异步函数处理生图（不阻塞消息流）
+                        (async () => {
+                            try {
+                                // 2. 调用 NAI 生成函数 (传入了 senderIdOverride)
+                                const generatedData = await generateNovelAIImageForChat(naiData.prompt, targetChatId, targetChatType, senderId);
+
+                                // 3. 创建最终的图片消息
+                                const finalMessage = {
+                                    id: tempMessageId, // 使用占位消息的ID
+                                    role: 'assistant',
+                                    type: 'naiimag', // ★★★ 关键类型
+                                    imageUrl: generatedData.imageUrl, // 图像的 Data URL
+                                    prompt: naiData.prompt, // 原始用户prompt
+                                    fullPrompt: generatedData.fullPrompt, // 完整的组合prompt（包含角色专属提示词）
+                                    timestamp: tempMessage.timestamp, // 使用占位消息的时间戳
+                                    senderId: senderId,
+                                    isTemporary: false // 移除临时标记
+                                };
+
+                                // 4. 替换历史记录中的占位消息
+                                const msgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                                if (msgIndex > -1) {
+                                    chat.history[msgIndex] = finalMessage;
+                                } else {
+                                    chat.history.push(finalMessage); // 备用方案
+                                }
+
+                                // 5. 重新渲染聊天界面以显示图片
+                                currentPage = 1;
+                                renderMessages(false, true);
+                                await saveData(); // 保存更改
+
+                            } catch (error) {
+                                // 6. 处理失败
+                                console.error('NAI 聊天作画失败:', error);
+                                const errorMsg = `[${senderName}的消息：作画失败 😥: ${error.message}]`;
+                                const msgIndex = chat.history.findIndex(m => m.id === tempMessageId);
+                                if (msgIndex > -1) {
+                                    chat.history[msgIndex].content = errorMsg;
+                                    chat.history[msgIndex].parts = [{type: 'text', text: errorMsg}];
+                                    chat.history[msgIndex].isTemporary = false;
+                                }
+                                currentPage = 1;
+                                renderMessages(false, true);
+                                await saveData(); // 保存错误信息
+                            }
+                        })();
                     }
                     // ▲▲▲ NAI 主动发图拦截结束 ▲▲▲
 
@@ -11098,11 +11135,19 @@ function renderForumPosts(posts) {
             // 3. 组合最终的提示词
             let finalPositivePrompt = userPrompt;
             if (promptsConfig.positive) {
-                finalPositivePrompt += `, ${promptsConfig.positive}`;
+                // 如果用户Prompt和角色专属Prompt都有内容，用逗号连接
+                if (finalPositivePrompt) {
+                    finalPositivePrompt += `, ${promptsConfig.positive}`;
+                } else {
+                    finalPositivePrompt = promptsConfig.positive;
+                }
             }
+            // 确保不会以空逗号开头
+            finalPositivePrompt = finalPositivePrompt.startsWith(',') ? finalPositivePrompt.substring(1).trim() : finalPositivePrompt.trim();
 
             // 4. 获取最终的负面提示词
-            const finalNegativePrompt = promptsConfig.negative;
+            // (如果角色配置了负面词，则使用它；否则使用系统默认负面词)
+            const finalNegativePrompt = promptsConfig.source === 'character' ? promptsConfig.negative : settings.default_negative;
 
             console.log('🎨 NAI 聊天作画开始...');
             console.log('   模型:', model);
@@ -11202,67 +11247,106 @@ function renderForumPosts(posts) {
 
             const contentType = response.headers.get('content-type');
             let imageBlob;
+            let imageDataUrl;
 
             // 8. 处理响应 (流式或 ZIP)
             if (contentType && contentType.includes('text/event-stream')) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
+                // SSE (V4/V4.5) - 使用更健壮的解析方式
+                const text = await response.text();
+                const lines = text.trim().split('\n');
                 let base64Data = null;
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const eventEndIndex = buffer.indexOf('\n\n');
-                    if (eventEndIndex !== -1) {
-                        const eventData = buffer.substring(0, eventEndIndex);
-                        buffer = buffer.substring(eventEndIndex + 2);
-                        const lines = eventData.split('\n');
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                const dataContent = line.substring(6).trim();
-                                if (dataContent && dataContent !== '[DONE]') {
-                                    try {
-                                        const jsonData = JSON.parse(dataContent);
-                                        if (jsonData.event_type === 'final' && jsonData.image) base64Data = jsonData.image;
-                                        else if (jsonData.data && typeof jsonData.data === 'string') base64Data = jsonData.data;
-                                    } catch (e) { base64Data = dataContent; }
-                                }
+                
+                // 从后往前遍历，找到最后一个有效的数据
+                for (let i = lines.length - 1; i >= 0; i--) {
+                    const line = lines[i].trim();
+                    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                        const dataContent = line.substring(6);
+                        try {
+                            const jsonData = JSON.parse(dataContent);
+                            if (jsonData.event_type === 'final' && jsonData.image) {
+                                base64Data = jsonData.image;
+                                break;
                             }
+                            if (jsonData.data) {
+                                base64Data = jsonData.data;
+                                break;
+                            }
+                            if (jsonData.image) {
+                                base64Data = jsonData.image;
+                                break;
+                            }
+                        } catch (e) {
+                            base64Data = dataContent;
+                            break;
                         }
                     }
                 }
                 if (!base64Data) throw new Error('无法从 SSE 响应中提取图片数据');
-                const binaryString = atob(base64Data);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-                imageBlob = new Blob([bytes], { type: 'image/png' });
+
+                const isPNG = base64Data.startsWith('iVBORw0KGgo');
+                const isJPEG = base64Data.startsWith('/9j/');
+
+                if (isPNG || isJPEG) {
+                    imageDataUrl = `data:${isPNG ? 'image/png' : 'image/jpeg'};base64,${base64Data}`;
+                } else {
+                    const binaryString = atob(base64Data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+                    imageBlob = new Blob([bytes]);
+                }
 
             } else {
+                // ZIP (V3) 或其他格式
                 const responseData = await response.blob();
                 if (responseData.type.startsWith('image/')) {
                     imageBlob = responseData;
                 } else if (responseData.type === 'application/zip' || responseData.type === 'application/octet-stream') {
                     if (typeof JSZip === 'undefined') throw new Error('JSZip 库未加载');
-                    const zip = await JSZip.loadAsync(responseData);
-                    let imageFile = null;
-                    for (const filename in zip.files) {
-                        if (filename.match(/\.(png|jpg|jpeg|webp)$/i)) { imageFile = zip.files[filename]; break; }
-                    }
-                    if (!imageFile) throw new Error('ZIP 文件中未找到图片');
-                    imageBlob = await imageFile.async('blob');
+                    imageBlob = responseData;
                 } else {
                     throw new Error(`未知的响应类型: ${responseData.type}`);
                 }
             }
 
-            // 9. 将 Blob 转换为 Data URL
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(imageBlob);
-            });
+            // 9. 解压 (如果需要) 并转换为 Data URL
+            if (!imageDataUrl && imageBlob) {
+                if (imageBlob.type === 'application/zip' || imageBlob.type === 'application/octet-stream') {
+                    if (typeof JSZip === 'undefined') throw new Error('JSZip 库未加载');
+                    
+                    const zip = await JSZip.loadAsync(imageBlob);
+                    let imageFile = null;
+                    for (const filename in zip.files) {
+                        if (filename.match(/\.(png|jpg|jpeg|webp)$/i)) {
+                            imageFile = zip.files[filename];
+                            break;
+                        }
+                    }
+                    if (!imageFile) throw new Error('ZIP 文件中未找到图片');
+                    
+                    const blob = await imageFile.async('blob');
+                    
+                    imageDataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } else {
+                    // 直接是图片 Blob
+                    imageDataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(imageBlob);
+                    });
+                }
+            }
+
+            console.log(`✅ [NAI核心生成] 成功！`);
+            return {
+                imageUrl: imageDataUrl,
+                fullPrompt: finalPositivePrompt
+            };
         }
 
     });

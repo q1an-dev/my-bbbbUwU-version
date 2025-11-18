@@ -12731,6 +12731,13 @@ renderAiWalletTransactions(generatedData.transactions);
          * 调用 NovelAI API 生成图像 (用于测试弹窗)
          */
         async function generateNovelAIImage() {
+            // --- 新增：清理上一张图片的内存 ---
+            const resultImage = document.getElementById('nai-result-image');
+            if (resultImage.src && resultImage.src.startsWith('blob:')) {
+                URL.revokeObjectURL(resultImage.src);
+            }
+            // --- 新增结束 ---
+
             // 从 localStorage 或 DOM 获取基础设置
             const apiKey = localStorage.getItem('novelai-api-key') || '';
             const model = localStorage.getItem('novelai-model') || 'nai-diffusion-4-5-full';
@@ -12757,7 +12764,7 @@ renderAiWalletTransactions(generatedData.transactions);
             const resultDiv = document.getElementById('nai-test-result');
             const errorDiv = document.getElementById('nai-test-error');
             const generateBtn = document.getElementById('nai-generate-btn');
-            const resultImage = document.getElementById('nai-result-image');
+            // const resultImage = document.getElementById('nai-result-image'); // 已在函数开头声明
 
             // 更新 UI 状态：显示加载中
             statusDiv.textContent = '正在请求 NovelAI API...';

@@ -5811,7 +5811,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         let previewContent = message.content;
         const textMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
         if (textMatch) {
-            previewContent = textMatch[2];
+            previewContent = textMatch[1];
         } else if (/\[.*?的表情包(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[表情包]';
         } else if (/\[.*?的语音(?:：|:).*?\]/.test(message.content)) {
@@ -5873,11 +5873,23 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 // --- 原始：如果是普通文本/语音消息 ---
                 // 1. 加载 content 到输入框
                 let contentToEdit = message.content;
-                const plainTextMatch = contentToEdit.match(/^\[.*?：([\s\S]*)\]$/);
+
+                // 修复：同时兼容中文冒号 (：) 和英文冒号 (:)
+                // 这样编辑时就会自动把 [角色名: ...] 这个外壳去掉了
+                const plainTextMatch = contentToEdit.match(/^\[.*?(?:：|:)([\s\S]*)\]$/);
+
                 if (plainTextMatch && plainTextMatch[1]) {
                     contentToEdit = plainTextMatch[1].trim();
                 }
                 contentToEdit = contentToEdit.replace(/\[发送时间:.*?\]/g, '').trim();
+
+                // --- 新增：如果是 HTML 代码块，进一步剥离 ```json ... ``` 标记 ---
+                // 防止编辑时看到 ```json 以及末尾的 ```
+                const jsonBlockMatch = contentToEdit.match(/^```json([\s\S]*)```$/);
+                if (jsonBlockMatch && jsonBlockMatch[1]) {
+                    contentToEdit = jsonBlockMatch[1].trim();
+                }
+
                 textarea.value = contentToEdit;
                 // 2. 恢复弹窗标题
                 if (modalTitle) modalTitle.textContent = '编辑消息';
@@ -6194,7 +6206,8 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             const timeSkipMatch = content.match(timeSkipRegex);
             const inviteMatch = content.match(inviteRegex);
             const renameMatch = content.match(renameRegex);
-            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
+            // 修复：增加了 (?:：|:) 来兼容中文和英文冒号，确保状态更新能被正确识别和隐藏
+            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
             if (invisibleRegex.test(content)) {
                 return null;
             }
@@ -6359,7 +6372,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     const imageHost = useCatbox ? 'https://files.catbox.moe/' : 'https://i.postimg.cc/';
 
                    // 3. 从AI回复中获取原始路径
-                    const rawPath = receivedStickerMatch[2].trim();
+                    const rawPath = receivedStickerMatch[1].trim();
         
                                         // 4. 关键: 根据图床选择不同的路径处理方式
                     let finalPath;
@@ -6405,7 +6418,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 }
                 bubbleElement.innerHTML = `<img src="https://i.postimg.cc/rp0Yg31K/chan-75.png" alt="gift" class="gift-card-icon"><div class="gift-card-text">${giftText}</div><div class="gift-card-received-stamp">已查收</div>`;
 
-                const description = groupGiftMatch ? groupGiftMatch[4].trim() : match[2].trim();
+                const description = groupGiftMatch ? groupGiftMatch[3].trim() : match[1].trim();
                 const descriptionDiv = document.createElement('div');
                 descriptionDiv.className = 'gift-card-description';
                 descriptionDiv.textContent = description;
@@ -6440,15 +6453,15 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     bubbleElement.style.backgroundColor = bubbleTheme.bg;
                     bubbleElement.style.color = bubbleTheme.text;
                 }
-                bubbleElement.innerHTML = `<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg><span class="duration">${calculateVoiceDuration(voiceMatch[2].trim())}"</span>`;
+                bubbleElement.innerHTML = `<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg><span class="duration">${calculateVoiceDuration(voiceMatch[1].trim())}"</span>`;
                 const transcriptDiv = document.createElement('div');
                 transcriptDiv.className = 'voice-transcript';
-                transcriptDiv.textContent = voiceMatch[2].trim();
+                transcriptDiv.textContent = voiceMatch[1].trim();
                 wrapper.appendChild(transcriptDiv);
             } else if (photoVideoMatch) {
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'pv-card';
-                bubbleElement.innerHTML = `<div class="pv-card-content">${photoVideoMatch[2].trim()}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・点击查看</span></div>`;
+                bubbleElement.innerHTML = `<div class="pv-card-content">${photoVideoMatch[1].trim()}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・点击查看</span></div>`;
             } else if (privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch) {
                 const isSentTransfer = !!privateSentTransferMatch || (groupTransferMatch && isSent);
                 const match = privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch;
@@ -6457,12 +6470,12 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 if (groupTransferMatch) {
                     const from = groupTransferMatch[1];
                     const to = groupTransferMatch[2];
-                    amount = parseFloat(groupTransferMatch[4]).toFixed(2);
-                    remarkText = groupTransferMatch[5] || ''; // 备注在后台保留，但CSS会隐藏
+                    amount = parseFloat(groupTransferMatch[3]).toFixed(2);
+                    remarkText = groupTransferMatch[4] || ''; // 备注在后台保留，但CSS会隐藏
                     titleText = isSent ? `向 ${to} 转账` : `${from} 向你转账`;
                 } else { // Private chat
-                    amount = parseFloat(match[2]).toFixed(2);
-                    remarkText = match[3] || ''; // 备注在后台保留，但CSS会隐藏
+                    amount = parseFloat(match[1]).toFixed(2);
+                    remarkText = match[2] || ''; // 备注在后台保留，但CSS会隐藏
                     titleText = isSentTransfer ? '给你转账' : '转账';
                 }
 
@@ -6500,7 +6513,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             } else if (textMatch) {
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
-                let userText = textMatch[2].trim().replace(/\[发送时间:.*?\]/g, '').trim();
+                let userText = textMatch[1].trim().replace(/\[发送时间:.*?\]/g, '').trim();
 
                 // --- 新增：剥离 ```json ... ``` 包裹 ---
                 // 匹配以 ```json 开始，并以 ``` 结尾的字符串，并提取中间的内容
@@ -6516,8 +6529,8 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 // 允许这个块渲染 HTML (例如 Bilibili 卡片)
                 // 使用与 'html' part 相同的 DOMPurify 配置
                 bubbleElement.innerHTML = DOMPurify.sanitize(userText, {
-                    ADD_TAGS: ['style'],  // 允许 <style> 标签
-                    ADD_ATTR: ['style']   // 允许所有标签上的 style="" 属性
+                    ADD_TAGS: ['style', 'button', 'div', 'span', 'p'], // 允许常用标签
+                    ADD_ATTR: ['style', 'onclick', 'class', 'id']   // 🟢 允许点击事件
                 });
                 // --- 修复结束 ---
 
@@ -6531,8 +6544,8 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
     // 使用 DOMPurify 清理和渲染 HTML
     // 修改后
     bubbleElement.innerHTML = DOMPurify.sanitize(message.parts[0].text, {
-        ADD_TAGS: ['style'],  // 允许 <style> 标签
-        ADD_ATTR: ['style']   // 允许所有标签上的 style="" 属性
+        ADD_TAGS: ['style', 'button', 'div', 'span', 'p'], // 确保常用标签被允许
+        ADD_ATTR: ['style', 'onclick', 'class', 'id']   // 🟢 关键：添加 'onclick' 允许点击事件
     });
 
 } else {
@@ -6553,8 +6566,11 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
     }
     // --- 新增结束 ---
 
-    // 默认使用 DOMPurify 清理和渲染所有内容
-    bubbleElement.innerHTML = DOMPurify.sanitize(displayedContent);
+    // 🟢 修复：允许 style 和 onclick，让小卡片可以交互
+    bubbleElement.innerHTML = DOMPurify.sanitize(displayedContent, {
+        ADD_TAGS: ['style', 'button', 'div', 'span', 'p'],
+        ADD_ATTR: ['style', 'onclick', 'class', 'id']
+    });
 
     if (!chat.useCustomBubbleCss) {
         bubbleElement.style.backgroundColor = bubbleTheme.bg;
@@ -6636,7 +6652,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     // Extract clean text for preview
                     const textMatch = previewText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
                     if (textMatch) {
-                        previewText = textMatch[2];
+                        previewText = textMatch[1];
                     } else {
                         // Handle other message types for preview
                         if (/\[.*?的表情包(?:：|:).*?\]/.test(previewText)) previewText = '[表情包]';
@@ -7843,12 +7859,41 @@ ${loadedModules.map(m => `
                     senderId = null; // 私聊中，AI默认是对方
                     messageContent = item.content; // 仅保留 HTML 内容
 
+                // 🟢 修复：正确处理AI的引用回复
                 } else if (item.key.includes('引用')) {
-                    // 格式: [哥哥引用"..."并回复: ...]
-                    // 不需要特殊处理，createMessageBubbleElement 会解析
+                    // 尝试从Key中提取引用内容，例如 "角色名引用"原文"并回复"
+                    const quoteMatch = item.key.match(/引用[“"]([\s\S]+?)[”"]并回复/);
+                    const quoteText = quoteMatch ? quoteMatch[1] : "引用内容";
 
+                    // 构造标准消息格式，但在对象中附加 quote 属性
+                    messageContent = `[${character.realName || character.name}的消息：${item.content}]`;
+                    // 我们将在下面创建 message 对象时附加 quote 数据
+
+                // 🟢 修复：正确处理AI的撤回指令
                 } else if (item.key.includes('撤回了上一条消息')) {
-                     // 不需要特殊处理，addMessageBubble 会解析
+                    // 1. 找到上一条 AI 发送的消息
+                    const lastAiMsgIndex = chat.history.slice().reverse().findIndex(m => m.role === 'assistant' && !m.isWithdrawn);
+
+                    if (lastAiMsgIndex !== -1) {
+                        const realIndex = chat.history.length - 1 - lastAiMsgIndex;
+                        const msgToWithdraw = chat.history[realIndex];
+
+                        // 2. 标记为已撤回
+                        msgToWithdraw.isWithdrawn = true;
+                        msgToWithdraw.originalContent = msgToWithdraw.content; // 备份原内容
+
+                        // 3. 更新内容提示
+                        msgToWithdraw.content = `[${character.realName || character.name} 撤回了一条消息：${msgToWithdraw.content.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')}]`;
+
+                        // 4. 保存并刷新 UI
+                        await saveData();
+                        renderMessages(false, false); // 重新渲染当前页面消息
+
+                        // 5. 跳过本次循环，不发送"撤回指令"本身的气泡
+                        continue;
+                    }
+                    // 如果没找到可撤回的消息，就忽略这条指令
+                    continue;
 
                 } else if (item.key === 'unknown') {
                     // AI 没按格式返回，强行包裹
@@ -7990,6 +8035,18 @@ ${loadedModules.map(m => `
                     timestamp: Date.now(),
                     senderId: senderId
                 };
+
+                // 🟢 修复：如果是引用消息，附加 quote 对象
+                if (item.key.includes('引用')) {
+                    const quoteMatch = item.key.match(/引用[“"]([\s\S]+?)[”"]/);
+                    if (quoteMatch) {
+                         message.quote = {
+                            id: 'ai_quote_' + Date.now(),
+                            content: quoteMatch[1],
+                            senderId: 'user_me' // 假定引用的是用户
+                        };
+                    }
+                }
 
                 // 检查是否为转账或礼物
                 if (targetChatType === 'private') {

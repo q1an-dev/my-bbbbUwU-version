@@ -6173,7 +6173,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     <div>
                         <span class="withdrawn-message">${withdrawnText}</span>
                     </div>
-                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')) : ''}</div>
+                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent) : ''}</div>
                 `;
 
                 const withdrawnMessageSpan = wrapper.querySelector('.withdrawn-message');
@@ -6950,16 +6950,23 @@ async function withdrawMessage(messageId) {
     // 更新数据模型
     message.isWithdrawn = true;
 
-    // 提取干净的原始内容用于AI上下文和UI的“重新编辑”
-    const cleanContentMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
-    const cleanOriginalContent = cleanContentMatch ? cleanContentMatch[1] : message.content;
-    message.originalContent = cleanOriginalContent; // 保存干净的原始内容
+    // 提取干净的原始内容用于AI上下文和UI的"重新编辑"
+    // 使用更通用的正则表达式，匹配第一个冒号之后到最后一个括号的内容
+    const cleanContentMatch = message.content.match(/\[[^:]+(?:：|:)([\s\S]*)\]$/);
+    let cleanOriginalContent = cleanContentMatch ? cleanContentMatch[1].trim() : message.content;
+
+    // 修复图片撤回时内容是base64的问题
+    if (!cleanContentMatch && (message.content.startsWith('data:image') || (message.parts && message.parts.some(p => p.type === 'image')))) {
+        cleanOriginalContent = "[图片]";
+    }
+
+    message.originalContent = cleanOriginalContent; // 保存处理过的、干净的原始内容
 
     // 获取当前用户的昵称
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
     
-    // 为AI生成新的、可理解的上下文消息
-    message.content = `[${myName} 撤回了一条消息：${cleanOriginalContent}]`;
+    // 为AI生成新的、可理解的上下文消息 (使用干净的 originalContent)
+    message.content = `[${myName} 撤回了一条消息：${message.originalContent}]`;
 
     // 保存数据
     await saveData();

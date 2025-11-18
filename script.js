@@ -5811,7 +5811,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         let previewContent = message.content;
         const textMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
         if (textMatch) {
-            previewContent = textMatch[2];
+            previewContent = textMatch[1];
         } else if (/\[.*?的表情包(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[表情包]';
         } else if (/\[.*?的语音(?:：|:).*?\]/.test(message.content)) {
@@ -6500,7 +6500,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             } else if (textMatch) {
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
-                let userText = textMatch[2].trim().replace(/\[发送时间:.*?\]/g, '').trim();
+                let userText = textMatch[1].trim().replace(/\[发送时间:.*?\]/g, '').trim();
 
                 // --- 新增：剥离 ```json ... ``` 包裹 ---
                 // 匹配以 ```json 开始，并以 ``` 结尾的字符串，并提取中间的内容
@@ -6636,7 +6636,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     // Extract clean text for preview
                     const textMatch = previewText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
                     if (textMatch) {
-                        previewText = textMatch[2];
+                        previewText = textMatch[1];
                     } else {
                         // Handle other message types for preview
                         if (/\[.*?的表情包(?:：|:).*?\]/.test(previewText)) previewText = '[表情包]';

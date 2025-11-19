@@ -5406,7 +5406,7 @@ detailModal.classList.remove('visible');
             sortedChats.forEach(chat => {
                 let lastMessageText = '开始聊天吧...';
                 if (chat.history && chat.history.length > 0) {
-                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
+                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
                     const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
                     if (visibleHistory.length > 0) {
                         const lastMsg = visibleHistory[visibleHistory.length - 1];
@@ -6624,7 +6624,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 if (senderChat) {
         // --- 从这里开始是新增的代码 ---
         // 如果消息不是系统内部不可见的消息，才增加未读计数
-                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
+                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
                     if (!invisibleRegex.test(message.content)) {
                         senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
                         saveData(); // 保存数据
@@ -6676,7 +6676,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             // --- Original logic for when the chat is active ---
             if (currentChatType === 'private') {
                 const character = db.characters.find(c => c.id === currentChatId);
-                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为：(.*?)\\]`);
+                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为(?:：|:)(.*?)\\]`);
                 const transferActionRegex = new RegExp(`\\[${character.realName}(接收|退回)${character.myName}的转账\\]`);
                 const giftReceivedRegex = new RegExp(`\\[${character.realName}已接收礼物\\]`);
                 

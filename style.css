@@ -80,8 +80,7 @@
 
         /* 排除消息气泡文字的全局字体 */
         .message-bubble.received .message-text,
-        .message-bubble.sent .message-text,
-        .history-item-annotation {
+        .message-bubble.sent .message-text {
             font-family: initial !important;
         }
 
@@ -1194,9 +1193,9 @@
             font-size: 12px;
             font-weight: 400;
             margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: normal; /* 允许文本换行 */
+            word-wrap: break-word; /* 确保长单词或长数字能正确换行 */
+            line-height: 1.3; /* 增加行高，让多行显示不拥挤 */
             color: rgba(255, 255, 255, 0.7); /* 默认备注颜色 */
         }
 
@@ -3177,6 +3176,7 @@
             font-size: 12px;
             display: block;
             margin-bottom: 4px;
+            /* 继承全局字体 */
         }
 
         /* --- Peek Drafts Screen --- */

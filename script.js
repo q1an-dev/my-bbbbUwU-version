@@ -326,6 +326,30 @@ const WeatherService = {
 </div>
 
 <hr style="margin:20px 0; opacity:.3">
+<div class="form-group" style="background-color: #fff8fa; padding: 15px; border-radius: 12px; border: 1px solid #fce4ec;">
+    <label style="color: var(--primary-color); font-weight: 600; margin-bottom: 10px; display:block;">🤖 后台自动活动 (分钟/次)</label>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+        <div>
+            <small style="display:block; color:#d32f2f; text-align:center;">高频</small>
+            <input type="number" id="bg-freq-high" style="text-align:center;" placeholder="60">
+        </div>
+        <div>
+            <small style="display:block; color:#1976d2; text-align:center;">中频</small>
+            <input type="number" id="bg-freq-medium" style="text-align:center;" placeholder="180">
+        </div>
+        <div>
+            <small style="display:block; color:#388e3c; text-align:center;">低频</small>
+            <input type="number" id="bg-freq-low" style="text-align:center;" placeholder="480">
+        </div>
+    </div>
+    <button type="button" id="open-bg-activity-manager" class="btn btn-secondary" style="width: 100%;">管理角色活动频率</button>
+    <p style="font-size: 12px; color: #888; margin-top: 10px; line-height: 1.4;">
+        * 即使网页关闭，下次打开时AI也会根据错失的时间"补发"生活动态。<br>
+        * 必须在下方保存API设置才会生效。
+    </p>
+</div>
+
+<hr style="margin:20px 0; opacity:.3">
 <div class="form-group">
     <label for="minimax-group-id">Minimax Group ID</label>
     <input type="text" id="minimax-group-id" placeholder="请输入 Minimax Group ID">
@@ -480,8 +504,8 @@ const WeatherService = {
                const defaultIcons = {
             'chat-list-screen': {name: '404', url: 'https://i.postimg.cc/VvQB8dQT/chan-143.png'},
             'api-settings-screen': {name: 'api', url: 'https://i.postimg.cc/50FqT8GL/chan-125.png'},
-                        'world-book-screen': {name: '世界书', url: 'https://i.postimg.cc/prCWkrKT/chan-74.png'},
-            'peek-select-btn': {name: '查手机', url: 'https://i.postimg.cc/m2DRpk7v/chan-39.png'}, // <-- NEW
+            'world-book-screen': {name: '世界书', url: 'https://i.postimg.cc/prCWkrKT/chan-74.png'},
+            'peek-select-btn': {name: '查手机', url: 'https://i.postimg.cc/m2DRpk7v/chan-39.png'},
             'customize-screen': {name: '自定义', url: 'https://i.postimg.cc/vZVdC7gt/chan-133.png'},
             'font-settings-screen': {name: '字体', url: 'https://i.postimg.cc/FzVtC0x4/chan-21.png'},
             'tutorial-screen': {name: '教程', url: 'https://i.postimg.cc/6QgNzCFf/chan-118.png'},
@@ -515,7 +539,7 @@ const WeatherService = {
             'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons', 'stickerCategories',
             'apiPresets', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
             'globalCssPresets', 'homeSignature', 'forumPosts', 'forumBindings', 'pomodoroTasks', 'pomodoroSettings', 'insWidgetSettings', 'homeWidgetSettings',
-            'naiGlobalPromptPresets', 'fontPresets' // ▼▼▼ 新增 ▼▼▼
+            'naiGlobalPromptPresets', 'fontPresets', 'bgActivitySettings' // ▼▼▼ 新增 ▼▼▼
         ];
         const appVersion = "1.3.0"; // Current app version
         const updateLog = [
@@ -526,11 +550,11 @@ const WeatherService = {
                     "新增：集成 NAI 生图功能与 NAI 模块手册（方便按模块复用提示词）",
                     "新增：集成 Minimax 语音生成功能与语音 ID 管理",
                     "新增：环境感知（城市天气/时区注入）与智能提示注入逻辑",
-                    "改进：将"查手机"快捷入口搬到主页并新增"查手机 - 钱包"项（更易访问）",
+                    "改进：将'查手机'快捷入口搬到主页并新增'查手机 - 钱包'项（更易访问）",
                     "改进：增加大量预设支持多选，提升配置灵活性",
                     "美化：调整界面样式与若干表单/控件的视觉细节",
                     "修复：修正消息格式解析的正则表达式，提升解析鲁棒性",
-                    "工具：新增"清理缓存"按钮，方便快速清除本地缓存数据",
+                    "工具：新增'清理缓存'按钮，方便快速清除本地缓存数据",
                 ]
             },
             {
@@ -590,6 +614,13 @@ const WeatherService = {
                 bubble1: 'love u.',
                 avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
                 bubble2: 'miss u.'
+            },
+            // ▼▼▼ 新增：后台活动全局设置 ▼▼▼
+            bgActivitySettings: {
+                high: 60,    // 高频：60分钟
+                medium: 180, // 中频：3小时
+                low: 480,    // 低频：8小时
+                enabled: true // 全局总开关
             },
             // ▼▼▼ 新增：NAI 模块手册 (全局) ▼▼▼
             naiPromptModules: [],
@@ -2247,6 +2278,291 @@ const WeatherService = {
             }
         }
 
+// ==========================================
+// 🤖 AI 后台生活系统 (Background Life System)
+// ==========================================
+
+// 1. 管理界面逻辑
+function setupBackgroundActivitySystem() {
+    const modal = document.getElementById('background-activity-modal');
+    const list = document.getElementById('bg-activity-list');
+    const selectAllBtn = document.getElementById('bg-activity-select-all-btn');
+    const closeBtn = document.getElementById('close-bg-activity-modal');
+    const actionButtons = document.querySelectorAll('.batch-action-bar button');
+
+    // 渲染列表
+    const renderList = () => {
+        list.innerHTML = '';
+        // 只显示私聊角色
+        const chars = db.characters.filter(c => c.id.startsWith('char_'));
+
+        if (chars.length === 0) {
+            list.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">没有可配置的角色</p>';
+            return;
+        }
+
+        chars.forEach(char => {
+            // 默认值处理
+            if (!char.bgFrequency) char.bgFrequency = 'off';
+
+            const li = document.createElement('li');
+            li.className = 'bg-activity-item';
+            li.dataset.id = char.id;
+
+            let badgeClass = char.bgFrequency;
+            let badgeText = '';
+            switch(char.bgFrequency) {
+                case 'high': badgeText = '高频'; break;
+                case 'medium': badgeText = '中频'; break;
+                case 'low': badgeText = '低频'; break;
+                default: badgeText = '已关闭'; badgeClass = 'off';
+            }
+
+            li.innerHTML = `
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" class="char-select-cb">
+                </div>
+                <img src="${char.avatar}" alt="avatar">
+                <div class="bg-activity-info">
+                    <span class="bg-activity-name">${char.remarkName}</span>
+                    <span class="bg-activity-status">
+                        当前: <span class="freq-badge ${badgeClass}">${badgeText}</span>
+                    </span>
+                </div>
+            `;
+
+            // 点击条目切换选中
+            li.addEventListener('click', (e) => {
+                const cb = li.querySelector('.char-select-cb');
+                cb.checked = !cb.checked;
+                li.classList.toggle('selected', cb.checked);
+            });
+
+            list.appendChild(li);
+        });
+    };
+
+    renderList();
+    modal.classList.add('visible');
+
+    // 全选/反选
+    selectAllBtn.onclick = () => {
+        const allCbs = list.querySelectorAll('.char-select-cb');
+        const anyUnchecked = Array.from(allCbs).some(cb => !cb.checked);
+
+        allCbs.forEach(cb => {
+            cb.checked = anyUnchecked;
+            cb.closest('li').classList.toggle('selected', anyUnchecked);
+        });
+        selectAllBtn.textContent = anyUnchecked ? "取消全选" : "全选";
+    };
+
+    // 批量设置按钮
+    actionButtons.forEach(btn => {
+        btn.onclick = async () => {
+            const action = btn.dataset.action; // 'high', 'medium', 'low', 'off'
+            const selectedItems = list.querySelectorAll('.bg-activity-item.selected');
+
+            if (selectedItems.length === 0) return showToast('请先选择角色');
+
+            const ids = Array.from(selectedItems).map(item => item.dataset.id);
+
+            // 更新数据
+            db.characters.forEach(char => {
+                if (ids.includes(char.id)) {
+                    char.bgFrequency = action;
+                    // 如果开启，且从未设置过时间，初始化为当前时间（避免刚开启就狂发）
+                    if (action !== 'off' && !char.lastBgTime) {
+                        char.lastBgTime = Date.now();
+                    }
+                }
+            });
+
+            await saveData();
+            renderList(); // 刷新列表显示新状态
+            showToast(`已将 ${selectedItems.length} 位角色设置为 ${btn.textContent}`);
+        };
+    });
+
+    closeBtn.onclick = () => modal.classList.remove('visible');
+}
+
+// 2. 心跳检测循环 (主逻辑)
+function startBackgroundHeartbeat() {
+    // 每 60 秒检查一次
+    setInterval(async () => {
+        // 如果没有全局设置或未启用，跳过
+        if (!db.bgActivitySettings || !db.bgActivitySettings.enabled) return;
+
+        const now = Date.now();
+        const settings = db.bgActivitySettings;
+
+        // 遍历所有私聊角色
+        for (const char of db.characters) {
+            // 1. 检查是否开启
+            if (!char.bgFrequency || char.bgFrequency === 'off') continue;
+
+            // 2. 获取该角色设定的间隔 (分钟 -> 毫秒)
+            let intervalMinutes = settings[char.bgFrequency] || 180; // 默认中频
+
+            // 添加一点随机性 (±10%) 防止所有角色同时发消息
+            const jitter = intervalMinutes * 0.1 * (Math.random() - 0.5);
+            const intervalMs = (intervalMinutes + jitter) * 60 * 1000;
+
+            // 3. 检查时间是否到了
+            const lastTime = char.lastBgTime || 0;
+
+            // 如果是第一次运行 (lastTime=0)，我们不立即触发，而是设为当前时间，从现在开始计时
+            if (lastTime === 0) {
+                char.lastBgTime = now;
+                await saveData(); // 保存初始时间
+                continue;
+            }
+
+            if (now - lastTime > intervalMs) {
+                // ★★★ 触发后台消息生成 ★★★
+                console.log(`[后台活动] 触发角色: ${char.remarkName} (频率: ${char.bgFrequency})`);
+                await triggerBackgroundEvent(char);
+
+                // 更新时间并保存
+                char.lastBgTime = now;
+                await saveData();
+            }
+        }
+    }, 60000); // 60s loop
+}
+
+// 3. 生成后台生活消息
+async function triggerBackgroundEvent(char) {
+    const { url, key, model } = db.apiSettings;
+    if (!url || !key || !model) return;
+
+    // 1. 准备环境信息 (天气/时间)
+    let envInfo = "";
+    if (char.envAwarenessEnabled && char.aiCityObj) {
+        const city = char.aiCityObj;
+        const time = WeatherService.getLocalTime(city);
+        try {
+            const weather = await WeatherService.fetchWeather(city); // 复用已有的服务
+            if (weather) {
+                envInfo = `\n[当前环境] 地点:${city.displayName}, 时间:${time}, 天气:${weather.desc}, 气温:${Math.round(weather.temp)}度。`;
+            }
+        } catch(e) {
+            console.warn('天气获取失败:', e);
+        }
+    }
+
+    // 2. 随机决定分享类型 (增加趣味性)
+    const eventTypes = [
+        "分享一张照片（使用NovelAI或网络图）",
+        "分享一首正在听的歌",
+        "吐槽当前的天气或气温",
+        "分享刚才遇到的一个小八卦/趣事",
+        "单纯的碎碎念/撒娇/想念用户",
+        "分享最近看的综艺/剧集/帖子"
+    ];
+    // 根据人设微调：外向的更容易发照片/八卦
+    const randomType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+
+    // 3. 构建 Prompt
+    let prompt = `你现在处于后台"生活模式"。用户当前不在聊天界面。
+请你根据你的人设 (${char.persona})，主动给用户发送一条微信消息。
+${envInfo}
+
+**本次消息的主题是**：${randomType}
+
+**要求**：
+1. **语气自然**：就像真人闲暇时随手发的一条消息。不要太正式，可以用口语、颜文字。
+2. **格式严格**：必须使用以下标准格式之一（只返回一条消息）：
+   - 普通文本: [${char.realName}的消息：内容]
+   - 发送照片: [${char.realName}发送的表情包：图片URL] (如果是自拍或风景，且开启了NAI，请使用 NAI 格式)
+   - NAI生图(推荐): [NAI: {"prompt": "英文Prompt..."}] (用于生成你的自拍、食物、风景等)
+   - 分享歌曲: [${char.realName}的消息：分享一首好歌🎵《歌名》- 歌手]
+3. **内容结合**：如果是吐槽天气，请结合上面的[当前环境]信息。如果是分享生活，请符合你的兴趣设定。
+4. **不要打招呼**：不要说"你好"、"在吗"，直接说事。
+5. **长度**：2-6句话即可，不要长篇大论。
+
+请直接输出消息内容，不要包含任何解释。`;
+
+    try {
+        const response = await fetch(`${url}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.9 // 稍微高一点，增加随机性
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            let content = data.choices[0].message.content.trim();
+
+            // 简单的格式清理
+            if (!content.startsWith('[')) {
+                content = `[${char.realName}的消息：${content}]`;
+            }
+
+            // 构造消息对象
+            const message = {
+                id: `msg_bg_${Date.now()}`,
+                role: 'assistant',
+                content: content,
+                parts: [{ type: 'text', text: content }],
+                timestamp: Date.now(),
+                senderId: char.id
+            };
+
+            // NAI 特殊处理 (复用已有的逻辑)
+            if (content.includes('[NAI:')) {
+                const jsonMatch = content.match(/\[NAI:\s*({.*?})\]/);
+                if (jsonMatch) {
+                    try {
+                        const json = JSON.parse(jsonMatch[1]);
+                        // 异步生成图片 (不阻塞保存)
+                        generateNovelAIImageForChat(json.prompt, char.id, 'private').then(imgData => {
+                            message.type = 'naiimag';
+                            message.imageUrl = imgData.imageUrl;
+                            message.fullPrompt = imgData.fullPrompt;
+                            message.content = `[${char.realName}的消息：${json.prompt}]`; // 替换为文本提示
+                            // 更新数据库
+                            saveData();
+                            // 如果当前正在看这个角色的聊天，刷新界面
+                            if (currentChatId === char.id) {
+                                renderMessages(false, true);
+                            }
+                        }).catch(e => console.error('后台生图失败', e));
+                    } catch(e) {
+                        console.error('NAI JSON解析失败:', e);
+                    }
+                }
+            }
+
+            // 存入历史
+            char.history.push(message);
+            char.unreadCount = (char.unreadCount || 0) + 1;
+            await saveData();
+
+            // 如果当前在列表页或主页，更新红点
+            if (document.getElementById('chat-list-screen').classList.contains('active')) {
+                renderChatList();
+            }
+
+            // 发送系统通知 (浏览器级)
+            if ("Notification" in window && Notification.permission === "granted") {
+                new Notification(char.remarkName, {
+                    body: content.replace(/\[.*?的消息：(.*?)\]/, '$1'),
+                    icon: char.avatar,
+                    tag: 'bg-activity-' + char.id // 避免重复通知
+                });
+            }
+        }
+    } catch (e) {
+        console.error('后台活动生成失败:', e);
+    }
+}
+
         const init = async () => {
             await loadData();
             if (!db.homeWidgetSettings || !db.homeWidgetSettings.topLeft) {
@@ -2333,6 +2649,14 @@ const WeatherService = {
             setupInsWidgetAvatarModal();
             setupHeartPhotoModal();
             setupPeekCharacterSelectScreen(); // <-- 新增
+
+            // ▼▼▼ 启动后台系统 ▼▼▼
+            startBackgroundHeartbeat();
+
+            // 请求通知权限 (为了后台消息通知)
+            if ("Notification" in window && Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
         };
 
         function setupInsWidgetAvatarModal() {
@@ -7224,15 +7548,43 @@ if (db.apiSettings && db.apiSettings.timePerceptionEnabled) {
 let messageContent;
 const systemRegex = /\[system:.*?\]|\[system-display:.*?\]/;
 const inviteRegex = /\[.*?邀请.*?加入群聊\]/;
-const renameRegex = /\[(.*?)修改群名为“(.*?)”\]/;
+const renameRegex = /\[(.*?)修改群名为"(.*?)"\]/;
+
+// ▼▼▼ 新增：用户修改群昵称的正则 (兼容中英文冒号，支持带引号或不带) ▼▼▼
+const userRenameSelfGroupRegex = /^我修改我的群昵称为\s*(?:：|:)\s*[""']?(.*?)[""']?$/;
+// ▲▲▲ 新增结束 ▲▲▲
+
 const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
 
 if (renameRegex.test(text)) {
     const match = text.match(renameRegex);
     chat.name = match[2];
     chatRoomTitle.textContent = chat.name;
-    messageContent = `[${chat.me.nickname}修改群名为“${chat.name}”]`;
-} else if (systemRegex.test(text) || inviteRegex.test(text)) {
+    messageContent = `[${chat.me.nickname}修改群名为"${chat.name}"]`;
+}
+// ▼▼▼ 新增：处理用户改自己的群昵称 ▼▼▼
+else if (currentChatType === 'group' && userRenameSelfGroupRegex.test(text)) {
+    const match = text.match(userRenameSelfGroupRegex);
+    const newNickname = match[1];
+    const oldNickname = chat.me.nickname;
+
+    // 更新数据
+    chat.me.nickname = newNickname;
+
+    // 构造系统消息
+    messageContent = `[${oldNickname}修改我的群昵称为"${newNickname}"]`;
+
+    // 保存更改
+    await saveData();
+
+    // 如果侧边栏开着，刷新一下设置界面
+    const groupSettingsSidebar = document.getElementById('group-settings-sidebar');
+    if (groupSettingsSidebar.classList.contains('open')) {
+        document.getElementById('setting-group-my-nickname').value = newNickname;
+    }
+}
+// ▲▲▲ 新增结束 ▲▲▲
+else if (systemRegex.test(text) || inviteRegex.test(text)) {
     messageContent = text;
 } else {
     let userText = text;
@@ -7772,7 +8124,15 @@ return `${seconds}秒`;
             if (worldBooksBefore) {
                 prompt += `${worldBooksBefore}\n`;
             }
-            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status}。\n`;
+
+            // ▼▼▼ 修改：注入用户本名 ▼▼▼
+            const myRealNameInfo = character.myRealName ? ` (我的真名是：${character.myRealName})` : "";
+            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}${myRealNameInfo}。你的当前状态是：${character.status}。\n`;
+            if (character.myRealName) {
+                prompt += `   - **认知锁**：无论我的昵称(备注)如何变化，你都要记住我的真名是【${character.myRealName}】。昵称只是暂时的代号。\n`;
+            }
+            // ▲▲▲ 修改结束 ▲▲▲
+
             prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
             if (worldBooksAfter) {
                 prompt += `${worldBooksAfter}\n`;
@@ -7958,7 +8318,15 @@ ${DOMPurify.sanitize(m.content)}
 
             prompt += `角色和对话规则：\n`;
             if (worldBooksBefore) prompt += `${worldBooksBefore}\n`;
-            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status}。\n`;
+
+            // ▼▼▼ 修改：注入用户本名 ▼▼▼
+            const myRealNameInfo = character.myRealName ? ` (我的真名是：${character.myRealName})` : "";
+            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}${myRealNameInfo}。你的当前状态是：${character.status}。\n`;
+            if (character.myRealName) {
+                prompt += `   - **认知锁**：无论我的昵称(备注)如何变化，你都要记住我的真名是【${character.myRealName}】。昵称只是暂时的代号。\n`;
+            }
+            // ▲▲▲ 修改结束 ▲▲▲
+
             prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
             if (worldBooksAfter) prompt += `${worldBooksAfter}\n`;
             if (character.myPersona) prompt += `3. 关于我的人设：${character.myPersona}\n`;
@@ -7982,9 +8350,13 @@ ${DOMPurify.sanitize(m.content)}
             prompt += `10. ✨重要✨ 你可以引用我的单条消息并回复：格式为：[${character.myName}引用“{我的某条消息内容}”并回复：{回复内容}]。\n`;
             prompt += `11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等在括号或星号里的叙述性文本。\n`;
 
-            prompt += `12. 你拥有发送表情包的能力。格式为：[${character.realName}发送的表情包：图片URL]。\n`;
+            // ▼▼▼ 新增：私聊改备注规则 ▼▼▼
+            prompt += `12. ✨重要✨ 你可以修改自己的备注或者我对你的备注。这通常发生在关系变化或我想给你起昵称时。\n    - 修改你自己的备注: [${character.realName}修改自己的备注为：{新备注}]\n    - 修改用户(我)的备注: [${character.realName}修改你的备注为：{新备注}]\n`;
+            // ▲▲▲ 新增结束 ▲▲▲
 
-            let outputFormats = `\n    a) 普通消息: [${character.realName}的消息：{消息内容}]\n    b) 送我的礼物: [${character.realName}送来的礼物：{礼物描述}]\n    c) 语音消息: [${character.realName}的语音：{语音内容}]\n    d) 照片/视频: [${character.realName}发来的照片/视频：{描述}]\n    e) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]\n    f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]\n`;
+            prompt += `13. 你拥有发送表情包的能力。格式为：[${character.realName}发送的表情包：图片URL]。\n`;
+
+            let outputFormats = `\n    a) 普通消息: [${character.realName}的消息：{消息内容}]\n    b) 送我的礼物: [${character.realName}送来的礼物：{礼物描述}]\n    c) 语音消息: [${character.realName}的语音：{语音内容}]\n    d) 照片/视频: [${character.realName}发来的照片/视频：{描述}]\n    e) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]\n    f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]\n    g) 修改备注(指令): [${character.realName}修改自己的备注为：{新备注}] 或 [${character.realName}修改你的备注为：{新备注}]\n`;
 
             const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
             if (allWorldBookContent.includes('<orange>')) {
@@ -8021,7 +8393,11 @@ ${DOMPurify.sanitize(m.content)}
 
             prompt += `1. **核心任务**: 你需要同时扮演这个群聊中的 **所有** AI 成员。我会作为唯一的人类用户（“我”，昵称：${group.me.nickname}）与你们互动。\n\n`;
             prompt += `2. **群聊成员列表**: 以下是你要扮演的所有角色以及我的信息：\n`;
-            prompt += `   - **我 (用户)**: \n     - 群内昵称: ${group.me.nickname}\n     - 我的人设: ${group.me.persona || '无特定人设'}\n`;
+
+            // ▼▼▼ 修改：注入群聊用户本名 ▼▼▼
+            const myGroupRealName = group.me.realName ? `\n     - 我的真名: ${group.me.realName} (请记住我是谁)` : "";
+            prompt += `   - **我 (用户)**: \n     - 群内昵称: ${group.me.nickname}${myGroupRealName}\n     - 我的人设: ${group.me.persona || '无特定人设'}\n`;
+            // ▲▲▲ 修改结束 ▲▲▲
             group.members.forEach(member => {
                 prompt += `   - **角色: ${member.realName} (AI)**\n`;
                 prompt += `     - 群内昵称: ${member.groupNickname}\n`;
@@ -8039,13 +8415,25 @@ ${DOMPurify.sanitize(m.content)}
             prompt += `   - \`[${group.me.nickname} 向 {某个成员真名} 转账：...]\`: 我给某个特定成员转账了。\n`;
             prompt += `   - \`[${group.me.nickname} 向 {某个成员真名} 送来了礼物：...]\`: 我给某个特定成员送了礼物。\n`;
             prompt += `   - \`[${group.me.nickname}的表情包：...]\`, \`[${group.me.nickname}的语音：...]\`, \`[${group.me.nickname}发来的照片/视频：...]\`: 我发送了特殊类型的消息，群成员可以对此发表评论。\n`;
-            prompt += `   - \`[system: ...]\`, \`[...邀请...加入了群聊]\`, \`[...修改群名为...]\`: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。\n\n`;
+            prompt += `   - \`[system: ...]\`, \`[...邀请...加入了群聊]\`, \`[...修改群名为...]\`: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。\n`;
+            // ▼▼▼ 新增：群聊改昵称规则 ▼▼▼
+            prompt += `   - \`我修改我的群昵称为：{新昵称}\`: 我修改了自己在群里的昵称。\n`;
+            prompt += `   - \`[{成员真名}修改群昵称为：{新昵称}]\`: 群成员修改自己的群昵称。\n`;
+            prompt += `   - \`[{成员真名}修改群名为：{新群名}]\`: 群成员修改当前群聊的名称。\n\n`;
+            // ▲▲▲ 新增结束 ▲▲▲
+
+            prompt += `7. **修改群信息**: \n`;
+            prompt += `   - 群成员可以修改自己在群里的昵称。格式为：\`[{成员真名}修改群昵称为：{新昵称}]\`。\n`;
+            prompt += `   - 群成员也可以修改群聊的名称。格式为：\`[{成员真名}修改群名为：{新群名}]\`。\n`;
+            prompt += `   - 修改后，请立即适应新的设定进行后续对话。\n\n`;
 
             let outputFormats = `
   - **普通消息**: \`[{成员真名}的消息：{消息内容}]\`
   - **表情包**: \`[{成员真名}发送的表情包：{表情包路径}]\`。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
   - **语音**: \`[{成员真名}的语音：{语音转述的文字}]\`
-  - **照片/视频**: \`[{成员真名}发来的照片/视频：{内容描述}]\``;
+  - **照片/视频**: \`[{成员真名}发来的照片/视频：{内容描述}]\`
+  - **修改昵称**: \`[{成员真名}修改群昵称为：{新昵称}]\`
+  - **修改群名**: \`[{成员真名}修改群名为：{新群名}]\``;
            
            const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
            if (allWorldBookContent.includes('<orange>')) {
@@ -8417,6 +8805,68 @@ ${loadedModules.map(m => `
                     // 如果没找到可撤回的消息，就忽略这条指令
                     continue;
 
+                // ▼▼▼ 新增：处理私聊 AI 修改自己的备注 ▼▼▼
+                } else if (item.key.includes('修改自己的备注为')) {
+                    const newRemark = item.content.trim();
+
+                    if (newRemark) {
+                        console.log(`[System] Char ${character.realName} renamed self to ${newRemark}`);
+
+                        // 更新数据库
+                        character.remarkName = newRemark;
+
+                        // 保存数据
+                        await saveData();
+
+                        // 更新UI：标题
+                        const chatRoomTitle = document.getElementById('chat-room-title');
+                        if (chatRoomTitle) chatRoomTitle.textContent = newRemark;
+
+                        // 构造一条系统提示消息展示给用户
+                        const sysMsgId = `msg_sys_rename_${Date.now()}`;
+                        const sysMsg = {
+                            id: sysMsgId,
+                            role: 'system', // 标记为系统消息
+                            content: `[system-display:${character.realName} 修改自己的备注为 "${newRemark}"]`,
+                            parts: [],
+                            timestamp: Date.now()
+                        };
+                        chat.history.push(sysMsg);
+                        addMessageBubble(sysMsg, targetChatId, targetChatType);
+
+                        // 刷新列表以显示新名字
+                        renderChatList();
+                    }
+                    // 不显示这条指令本身的气泡
+                    continue;
+
+                // ▼▼▼ 新增：处理私聊 AI 修改用户的备注 ▼▼▼
+                } else if (item.key.includes('修改你的备注为')) {
+                    const newMyName = item.content.trim();
+
+                    if (newMyName) {
+                        console.log(`[System] Char ${character.realName} renamed User to ${newMyName}`);
+
+                        // 更新数据库
+                        character.myName = newMyName;
+
+                        // 保存数据
+                        await saveData();
+
+                        // 构造系统提示
+                        const sysMsgId = `msg_sys_rename_user_${Date.now()}`;
+                        const sysMsg = {
+                            id: sysMsgId,
+                            role: 'system',
+                            content: `[system-display:${character.realName} 修改你的备注为 "${newMyName}"]`,
+                            parts: [],
+                            timestamp: Date.now()
+                        };
+                        chat.history.push(sysMsg);
+                        addMessageBubble(sysMsg, targetChatId, targetChatType);
+                    }
+                    continue;
+
                 } else if (item.key === 'unknown') {
                     // AI 没按格式返回，强行包裹
                     messageContent = `[${character.realName || character.name}的消息：${item.content}]`;
@@ -8447,6 +8897,96 @@ ${loadedModules.map(m => `
                     const senderName = group.members[0]?.groupNickname || '群成员';
                     senderId = group.members[0]?.id || null;
                     messageContent = `[${senderName}的消息：${item.content}]`;
+
+                // ▼▼▼ 新增：处理群聊 AI 成员修改群昵称 ▼▼▼
+                } else if (item.key.includes('修改群昵称为')) {
+                    // key 格式可能是 "Alice修改群昵称为"
+                    const nameMatch = item.key.match(/(.*?)修改群昵称为/);
+                    if (nameMatch && targetChatType === 'group') {
+                        const realName = nameMatch[1];
+                        const newNickname = item.content.trim();
+
+                        // 在群成员中查找
+                        const member = group.members.find(m => m.realName === realName);
+                        if (member) {
+                            const oldNickname = member.groupNickname;
+                            member.groupNickname = newNickname;
+
+                            console.log(`[System] Group member ${realName} renamed to ${newNickname}`);
+
+                            // 保存数据
+                            await saveData();
+
+                            // 构造系统提示
+                            const sysMsgId = `msg_sys_group_rename_${Date.now()}`;
+                            const sysMsg = {
+                                id: sysMsgId,
+                                role: 'system',
+                                content: `[system-display:"${oldNickname}" 修改群昵称为 "${newNickname}"]`,
+                                parts: [],
+                                timestamp: Date.now(),
+                                senderId: member.id // 关联到该成员
+                            };
+                            chat.history.push(sysMsg);
+                            addMessageBubble(sysMsg, targetChatId, targetChatType);
+
+                            // 刷新UI
+                            // 如果侧边栏开着，更新成员列表
+                            const groupSettingsSidebar = document.getElementById('group-settings-sidebar');
+                            if (groupSettingsSidebar.classList.contains('open')) {
+                                renderGroupMembersInSettings(group);
+                            }
+                            renderMessages(false, true); // 🔄 核心修复：强制重绘消息列表，让新昵称立即生效
+                        }
+                    }
+                    continue;
+
+                // ▼▼▼ 新增：处理群聊 AI 成员修改群名 ▼▼▼
+                } else if (item.key.includes('修改群名为')) {
+                    // key 格式: "Alice修改群名为"
+                    const nameMatch = item.key.match(/(.*?)修改群名为/);
+                    if (nameMatch && targetChatType === 'group') {
+                        const realName = nameMatch[1]; // 操作者的真名
+                        const newGroupName = item.content.trim();
+
+                        if (newGroupName) {
+                            // 找到操作者以获取其昵称（用于显示系统消息）
+                            const member = group.members.find(m => m.realName === realName);
+                            const operatorName = member ? member.groupNickname : (realName || '群成员');
+
+                            console.log(`[System] Group name changed to "${newGroupName}" by ${realName}`);
+
+                            // 1. 更新数据
+                            group.name = newGroupName;
+
+                            // 2. 保存数据
+                            await saveData();
+
+                            // 3. 构造系统提示消息
+                            const sysMsgId = `msg_sys_gname_${Date.now()}`;
+                            const sysMsg = {
+                                id: sysMsgId,
+                                role: 'system',
+                                content: `[system-display:"${operatorName}" 修改群名为 "${newGroupName}"]`,
+                                parts: [],
+                                timestamp: Date.now(),
+                                senderId: member ? member.id : null
+                            };
+                            chat.history.push(sysMsg);
+                            addMessageBubble(sysMsg, targetChatId, targetChatType);
+
+                            // 4. 实时更新 UI (标题栏)
+                            const chatRoomTitle = document.getElementById('chat-room-title');
+                            if (chatRoomTitle && currentChatId === group.id) {
+                                chatRoomTitle.textContent = newGroupName;
+                            }
+
+                            // 5. 刷新列表（更新左侧列表显示的群名）
+                            renderChatList();
+                        }
+                    }
+                    continue; // 跳过默认消息气泡生成
+                // ▲▲▲ 新增结束 ▲▲▲
 
                 } else {
                     // 默认消息: [眠眠的消息: ...]
@@ -10869,6 +11409,29 @@ function renderStickerGrid() {
         function loadSettingsToSidebar() {
             const e = db.characters.find(e => e.id === currentChatId);
             if (e) {
+                // ▼▼▼ 新增：动态插入"角色本名"输入框 (放在备注名下方) ▼▼▼
+                const remarkInput = document.getElementById('setting-char-remark');
+                if (remarkInput) {
+                    const remarkGroup = remarkInput.closest('.form-group');
+                    // 检查是否已经插入过，避免重复
+                    if (remarkGroup && !document.getElementById('form-group-real-name')) {
+                        const realNameGroup = document.createElement('div');
+                        realNameGroup.className = 'form-group';
+                        realNameGroup.id = 'form-group-real-name';
+                        realNameGroup.innerHTML = `
+                            <hr style="border:none; border-top:1px solid #eee; margin: 15px 0 10px 0;">
+                            <label for="setting-char-real-name">角色本名 (AI认知的名字)</label>
+                            <input type="text" id="setting-char-real-name" placeholder="AI扮演时使用的真名">
+                        `;
+                        // 插入到"备注名"的下方
+                        remarkGroup.parentNode.insertBefore(realNameGroup, remarkGroup.nextSibling);
+                    }
+                    // 赋值
+                    const realNameEl = document.getElementById('setting-char-real-name');
+                    if (realNameEl) realNameEl.value = e.realName || '';
+                }
+                // ▲▲▲ 新增结束 ▲▲▲
+
                 document.getElementById('setting-char-avatar-preview').src = e.avatar;
                 document.getElementById('setting-char-remark').value = e.remarkName;
                 document.getElementById('setting-char-persona').value = e.persona;
@@ -10886,6 +11449,29 @@ function renderStickerGrid() {
                 const theme = colorThemes[e.theme || 'white_pink'];
                 updateBubbleCssPreview(privatePreviewBox, e.customBubbleCss, !e.useCustomBubbleCss, theme);
                 populateBubblePresetSelect('bubble-preset-select');
+
+                // ▼▼▼ 新增：动态插入"我的本名"输入框 (在"我的人设"上方) ▼▼▼
+                const myPersonaInput = document.getElementById('setting-my-persona');
+                if (myPersonaInput) {
+                    const myPersonaGroup = myPersonaInput.closest('.form-group');
+                    if (myPersonaGroup && !document.getElementById('form-group-my-real-name')) {
+                        const myRealNameGroup = document.createElement('div');
+                        myRealNameGroup.className = 'form-group';
+                        myRealNameGroup.id = 'form-group-my-real-name';
+                        myRealNameGroup.innerHTML = `
+                            <label for="setting-my-real-name">我的本名</label>
+                            <input type="text" id="setting-my-real-name" placeholder="">
+                        `;
+                        // 插入到"我的人设"的上方
+                        myPersonaGroup.parentNode.insertBefore(myRealNameGroup, myPersonaGroup);
+                    }
+                    // 赋值
+                    const myRealNameEl = document.getElementById('setting-my-real-name');
+                    if (myRealNameEl) myRealNameEl.value = e.myRealName || '';
+                }
+                // ▲▲▲ 新增结束 ▲▲▲
+
+  
                 populateMyPersonaSelect();
 
                 // --- 动态添加 Minimax Voice ID 及高级设置 (UI 优化版) ---
@@ -10967,6 +11553,18 @@ function renderStickerGrid() {
                 // 初始状态：根据勾选状态显示/隐藏
                 voiceDetailsPanel.style.display = voiceEnabledCheckbox.checked ? 'flex' : 'none';
                 // --- 结束添加 ---
+
+                // ▼▼▼ 移动"我的昵称"输入框到语音设置上方 ▼▼▼
+                const myNameInput = document.getElementById('setting-my-name');
+                const voiceSettingsElement = document.getElementById('form-group-voice-settings');
+                if (myNameInput && voiceSettingsElement) {
+                    const myNameGroup = myNameInput.closest('.form-group');
+                    if (myNameGroup && myNameGroup.nextSibling !== voiceSettingsElement) {
+                        // 移动"我的昵称"到语音设置上方
+                        voiceSettingsElement.parentNode.insertBefore(myNameGroup, voiceSettingsElement);
+                    }
+                }
+                // ▲▲▲ 移动结束 ▲▲▲
 
             // ==================================================
             // 🌍 智能搜索 UI (下拉热门城市版)
@@ -11204,10 +11802,22 @@ function renderStickerGrid() {
             const e = db.characters.find(e => e.id === currentChatId);
             if (e) {
                 e.avatar = document.getElementById('setting-char-avatar-preview').src;
+
+                // ▼▼▼ 新增：保存角色本名 ▼▼▼
+                const realNameInput = document.getElementById('setting-char-real-name');
+                if (realNameInput) e.realName = realNameInput.value.trim();
+                // ▲▲▲ 新增结束 ▲▲▲
+
                 e.remarkName = document.getElementById('setting-char-remark').value;
                 e.persona = document.getElementById('setting-char-persona').value;
                 e.myAvatar = document.getElementById('setting-my-avatar-preview').src;
                 e.myName = document.getElementById('setting-my-name').value;
+
+                // ▼▼▼ 新增：保存我的本名 ▼▼▼
+                const myRealNameInput = document.getElementById('setting-my-real-name');
+                if (myRealNameInput) e.myRealName = myRealNameInput.value.trim();
+                // ▲▲▲ 新增结束 ▲▲▲
+
                 e.myPersona = document.getElementById('setting-my-persona').value;
                 e.theme = document.getElementById('setting-theme-color').value;
                 e.maxMemory = document.getElementById('setting-max-memory').value;
@@ -11287,6 +11897,18 @@ function renderStickerGrid() {
             }
             // --- NovelAI 初始化结束 ---
 
+            // 回显后台频率设置
+            if (db.bgActivitySettings) {
+                document.getElementById('bg-freq-high').value = db.bgActivitySettings.high || 60;
+                document.getElementById('bg-freq-medium').value = db.bgActivitySettings.medium || 180;
+                document.getElementById('bg-freq-low').value = db.bgActivitySettings.low || 480;
+            }
+
+            // 绑定打开管理界面的按钮
+            document.getElementById('open-bg-activity-manager')?.addEventListener('click', () => {
+                setupBackgroundActivitySystem(); // 打开弹窗
+            });
+
             populateApiSelect();
             n.addEventListener('change', () => {
                 r.value = c[n.value] || ''
@@ -11338,6 +11960,15 @@ function renderStickerGrid() {
                     minimaxApiKey: minimaxApiKey,
                     minimaxModel: minimaxModel
                 };
+
+                // 保存后台频率
+                db.bgActivitySettings = {
+                    high: parseInt(document.getElementById('bg-freq-high').value) || 60,
+                    medium: parseInt(document.getElementById('bg-freq-medium').value) || 180,
+                    low: parseInt(document.getElementById('bg-freq-low').value) || 480,
+                    enabled: true
+                };
+
                 await saveData();
                 showToast('API设置已保存！')
             });
@@ -11735,6 +12366,55 @@ function renderStickerGrid() {
                 createMemberForGroupModal.classList.add('visible');
                 addMemberActionSheet.classList.remove('visible');
             });
+
+            // ▼▼▼ 新增：踢出群成员逻辑 ▼▼▼
+            const kickMemberBtn = document.getElementById('kick-group-member-btn');
+            if (kickMemberBtn) {
+                kickMemberBtn.addEventListener('click', async () => {
+                    const memberId = document.getElementById('editing-member-id').value;
+                    const group = db.groups.find(g => g.id === currentChatId);
+                    if (!group || !memberId) return;
+
+                    const memberIndex = group.members.findIndex(m => m.id === memberId);
+                    if (memberIndex > -1) {
+                        const memberName = group.members[memberIndex].groupNickname;
+
+                        if (confirm(`确定要把 "${memberName}" 移出群聊吗？`)) {
+                            // 1. 移除成员
+                            group.members.splice(memberIndex, 1);
+
+                            // 2. 添加系统消息
+                            const sysMsg = {
+                                id: `msg_sys_${Date.now()}`,
+                                role: 'system',
+                                content: `[system-display:${group.me.nickname} 将 ${memberName} 移出了群聊]`,
+                                parts: [],
+                                timestamp: Date.now(),
+                                senderId: 'user_me' // 视为用户操作
+                            };
+                            // 上下文消息给AI看
+                            const contextMsg = {
+                                id: `msg_ctx_${Date.now()}`,
+                                role: 'user',
+                                content: `[system: ${group.me.nickname} 将 ${memberName} 移出了群聊]`,
+                                parts: [{type: 'text', text: `[system: ${group.me.nickname} 将 ${memberName} 移出了群聊] `}],
+                                timestamp: Date.now(),
+                                senderId: 'user_me'
+                            };
+
+                            group.history.push(sysMsg, contextMsg);
+
+                            // 3. 保存并刷新
+                            await saveData();
+                            renderGroupMembersInSettings(group); // 刷新成员列表
+                            renderMessages(false, true); // 刷新消息视图
+                            editGroupMemberModal.classList.remove('visible'); // 关闭弹窗
+                            showToast(`${memberName} 已被移出群聊`);
+                        }
+                    }
+                });
+            }
+            // ▲▲▲ 新增结束 ▲▲▲
             document.getElementById('create-group-member-avatar-preview').addEventListener('click', () => {
                 document.getElementById('create-group-member-avatar-upload').click();
             });
@@ -11884,6 +12564,27 @@ function renderStickerGrid() {
             updateBubbleCssPreview(groupPreviewBox, group.customBubbleCss, !group.useCustomBubbleCss, theme);
             populateBubblePresetSelect('group-bubble-preset-select');
 
+            // ▼▼▼ 新增：群聊-动态插入"我的本名"输入框 (在"我的群人设"上方) ▼▼▼
+            const groupMyPersonaInput = document.getElementById('setting-group-my-persona');
+            if (groupMyPersonaInput) {
+                const groupMyPersonaGroup = groupMyPersonaInput.closest('.form-group');
+                if (groupMyPersonaGroup && !document.getElementById('form-group-group-my-real-name')) {
+                    const realNameGroup = document.createElement('div');
+                    realNameGroup.className = 'form-group';
+                    realNameGroup.id = 'form-group-group-my-real-name';
+                    realNameGroup.innerHTML = `
+                        <label for="setting-group-my-real-name">我的本名</label>
+                        <input type="text" id="setting-group-my-real-name" placeholder="">
+                    `;
+                    // 插入到"我的人设"的上方
+                    groupMyPersonaGroup.parentNode.insertBefore(realNameGroup, groupMyPersonaGroup);
+                }
+                // 赋值
+                const realNameEl = document.getElementById('setting-group-my-real-name');
+                if (realNameEl) realNameEl.value = group.me.realName || '';
+            }
+            // ▲▲▲ 新增结束 ▲▲▲
+
             // [新增] 为群聊"主题颜色"下拉框添加 change 事件监听
             const groupThemeSelect = document.getElementById('setting-group-theme-color');
             if (groupThemeSelect) {
@@ -11944,6 +12645,12 @@ function renderStickerGrid() {
             group.avatar = document.getElementById('setting-group-avatar-preview').src;
             group.me.avatar = document.getElementById('setting-group-my-avatar-preview').src;
             group.me.nickname = document.getElementById('setting-group-my-nickname').value;
+
+            // ▼▼▼ 新增：保存群聊我的本名 ▼▼▼
+            const groupRealNameInput = document.getElementById('setting-group-my-real-name');
+            if (groupRealNameInput) group.me.realName = groupRealNameInput.value.trim();
+            // ▲▲▲ 新增结束 ▲▲▲
+
             group.me.persona = document.getElementById('setting-group-my-persona').value;
             group.theme = document.getElementById('setting-group-theme-color').value;
             group.maxMemory = document.getElementById('setting-group-max-memory').value;

@@ -336,7 +336,7 @@
                                                                                 placeholder="你对Ta的称呼" required>
                 </div>
                 <div class="form-group">
-                    <label for="my-name-for-char">我的姓名</label><input type="text" id="my-name-for-char"
+                    <label for="my-name-for-char">我的昵称</label><input type="text" id="my-name-for-char"
                                                                          placeholder="你希望Ta如何称呼你" required>
                 </div>
                 <button type="submit" class="btn btn-primary">创建</button>
@@ -500,7 +500,7 @@
                                                                                style="display:none;"><label
                         for="setting-my-avatar-upload" class="btn btn-secondary"
                         style="flex-grow:1;">更换我的头像</label></div>
-                <div class="form-group"><label for="setting-my-name">我的姓名</label><input type="text"
+                <div class="form-group"><label for="setting-my-name">我的昵称</label><input type="text"
                                                                                             id="setting-my-name"></div>
                 <div class="form-group"><label for="setting-my-persona">我的人设</label><textarea
                         id="setting-my-persona" placeholder="描述你希望在对话中扮演的形象。"></textarea></div>
@@ -711,6 +711,7 @@
                     <textarea id="edit-member-persona" placeholder="详细描述角色的性格、背景等。"></textarea>
                 </div>
                 <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" id="kick-group-member-btn" class="btn btn-danger" style="margin-top: 10px;">移出群聊</button>
             </form>
         </div>
     </div>
@@ -1399,6 +1400,27 @@
                 <!-- Update content will be injected here -->
             </div>
             <button id="close-update-log-modal" class="btn btn-primary" style="margin-top: 15px;">我知道了</button>
+        </div>
+    </div>
+    <!-- Background Activity Modal -->
+    <div id="background-activity-modal" class="modal-overlay">
+        <div class="modal-window" style="max-width: 450px;">
+            <h3>后台活动管理</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 5px 10px 5px; border-bottom: 1px solid #eee;">
+                <span style="font-size: 13px; color: #666;">勾选角色进行批量设置</span>
+                <button id="bg-activity-select-all-btn" class="btn btn-neutral btn-xsmall">全选</button>
+            </div>
+
+            <ul id="bg-activity-list" class="bg-activity-list">
+                </ul>
+
+            <div class="batch-action-bar">
+                <button class="btn btn-danger" data-action="off">关闭</button>
+                <button class="btn btn-neutral" data-action="low">低频</button>
+                <button class="btn btn-secondary" data-action="medium">中频</button>
+                <button class="btn btn-primary" data-action="high">高频</button>
+            </div>
+            <button id="close-bg-activity-modal" class="btn btn-neutral" style="margin-top: 15px; width: 100%;">完成</button>
         </div>
     </div>
     <style>

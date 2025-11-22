@@ -1415,10 +1415,10 @@
                 </ul>
 
             <div class="batch-action-bar">
-                <button class="btn btn-danger" data-action="off">关闭</button>
                 <button class="btn btn-neutral" data-action="low">低频</button>
                 <button class="btn btn-secondary" data-action="medium">中频</button>
                 <button class="btn btn-primary" data-action="high">高频</button>
+                <button class="btn" data-action="off">关闭</button>
             </div>
             <button id="close-bg-activity-modal" class="btn btn-neutral" style="margin-top: 15px; width: 100%;">完成</button>
         </div>
@@ -1919,7 +1919,202 @@
             <button class="btn btn-primary" id="close-ai-wallet-detail-btn" style="margin-top: 20px;">关闭</button>
         </div>
     </div>
+
+    <!-- Diary App Screens -->
+    <div id="diary-screen" class="screen">
+        <header class="app-header">
+            <button class="back-btn" data-target="home-screen">‹</button>
+            <div class="title-container">
+                <h1 class="title">交换日记</h1>
+            </div>
+            <div class="action-btn-group">
+                <button class="action-btn" id="create-diary-btn" title="写日记">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+            </div>
+        </header>
+        <main class="content diary-list-content">
+
+        <div class="diary-calendar-wrapper">
+            <div class="calendar-header">
+                <button id="cal-prev-btn">‹</button>
+                <span id="cal-month-year">2025年 11月</span>
+                <button id="cal-next-btn">›</button>
+            </div>
+            <div class="calendar-weekdays">
+                <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+            </div>
+            <div id="diary-calendar-grid" class="calendar-grid">
+                </div>
+        </div>
+
+        <div id="diary-day-summary-container" style="display:none;">
+            </div>
+
+            <div class="diary-tabs">
+                <button class="diary-tab active" data-type="my">我的日记</button>
+                <button class="diary-tab" data-type="received">收到的回信</button>
+            </div>
+            <ul id="diary-list" class="list-container">
+                </ul>
+            <div id="no-diary-placeholder" class="placeholder-text" style="display:none;">
+                <p>纸短情长，<br>记录下的都是时光的标本。</p>
+            </div>
+        </main>
+    </div>
+
+    <div id="diary-editor-screen" class="screen" style="background: #fdfbf7;">
+        <header class="app-header" style="background: #fdfbf7; border-bottom: none; padding: 15px 20px;">
+            <button class="action-btn text-btn cancel" id="close-diary-editor-btn">取消</button>
+            <div class="title-container">
+                <h1 class="title" style="font-family: var(--diary-font-family); font-weight: normal; font-size: 18px;">书写</h1>
+            </div>
+            <button class="action-btn text-btn confirm" id="save-diary-btn">完成</button>
+        </header>
+
+        <div class="diary-toolbar">
+            <button class="tool-btn" data-cmd="bold" title="加粗"><span style="font-weight:900; font-family: serif;">B</span></button>
+            <button class="tool-btn" data-cmd="italic" title="斜体"><span style="font-style:italic; font-family: serif;">I</span></button>
+            <button class="tool-btn" data-cmd="underline" title="下划线"><span style="text-decoration:underline; font-family: serif;">U</span></button>
+            <button class="tool-btn" data-cmd="strikeThrough" title="删除线"><span style="text-decoration:line-through; font-family: serif;">S</span></button>
+            <button class="tool-btn" id="diary-font-set-btn" title="设置字体"><span style="font-family: serif;">T</span></button>
+            <button class="tool-btn" id="diary-font-size-decrease-btn" title="减小字体"><span style="font-family: serif;">A-</span></button>
+            <button class="tool-btn" id="diary-font-size-increase-btn" title="增大字体"><span style="font-family: serif;">A+</span></button>
+            <button class="tool-btn" id="diary-align-btn" title="文本对齐"><span style="font-family: serif;">≡</span></button>
+            <button class="tool-btn" id="diary-color-btn" title="字体颜色"><span style="color: #d32f2f; font-family: serif; font-weight:bold;">A</span></button>
+            <input type="color" id="diary-color-input" style="display:none;">
+
+            <button class="tool-btn" id="diary-img-btn" title="插入图片">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#556b2f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            </button>
+            <input type="file" id="diary-img-input" accept="image/*" style="display:none;">
+
+            <button class="tool-btn" data-cmd="insertUnorderedList" title="清单">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8b4513" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+
+            <button class="tool-btn" id="diary-bg-btn" title="更换信纸">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4a4a4a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            </button>
+            <input type="file" id="diary-custom-bg-upload" accept="image/*" style="display:none;">
+        </div>
+
+        <main class="content" style="padding: 0; background: #fdfbf7;">
+            <div id="diary-paper-container" class="diary-paper default-paper">
+                <div class="diary-date-display" id="diary-editor-date"></div>
+                <input type="text" id="diary-title-input" placeholder="日记标题..." class="diary-title-input">
+                <div id="diary-content-editor" class="diary-content-editor" contenteditable="true" placeholder="今天发生了什么..."></div>
+            </div>
+        </main>
+
+        <div class="diary-bottom-actions">
+            <button id="exchange-diary-btn" class="btn btn-secondary">💌 交换日记</button>
+        </div>
+
+        <!-- 图片编辑工具栏 -->
+        <div id="diary-image-toolbar">
+
+            <div>
+                <div class="toolbar-section-title">风格 (Style)</div>
+                <div class="style-grid">
+                    <button class="style-btn active" data-style="polaroid" title="拍立得">📷</button>
+                    <button class="style-btn" data-style="film" title="胶片">🎞️</button>
+                    <button class="style-btn" data-style="sticker" title="贴纸">✨</button>
+                    <button class="style-btn" data-style="stamp" title="邮票">📮</button>
+                    <button class="style-btn" data-style="vintage" title="旧时光">📜</button>
+                    <button class="style-btn" data-style="noir" title="黑白">🌒</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="toolbar-section-title">位置与层级 (Collage)</div>
+
+                <div class="img-toolbar-row">
+                    <span>大小</span>
+                    <input type="range" id="img-size-slider" min="20" max="120" value="90">
+                </div>
+                <div class="img-toolbar-row">
+                    <span>旋转</span>
+                    <input type="range" id="img-rotate-slider" min="-45" max="45" value="0">
+                </div>
+
+                <div class="img-toolbar-row">
+                    <span>左右</span>
+                    <input type="range" id="img-x-slider" min="-150" max="150" value="0">
+                </div>
+                <div class="img-toolbar-row">
+                    <span>上下</span>
+                    <input type="range" id="img-y-slider" min="-150" max="150" value="0">
+                </div>
+
+                <div class="img-toolbar-row">
+                    <span>叠放</span>
+                    <input type="range" id="img-z-slider" min="0" max="10" value="1" step="1">
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 10px;">
+                <button id="img-delete-btn" class="btn btn-small btn-danger" style="width: 100%; border-radius: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 5px;">
+                        <polyline points="3,6 5,6 21,6"></polyline>
+                        <path d="M19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"></path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                    移除图片
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="diary-read-screen" class="screen">
+        <header class="app-header">
+            <button class="back-btn" id="close-diary-read-btn">‹</button>
+            <div class="title-container"><h1 class="title">阅读</h1></div>
+            <div class="action-btn-group">
+                <button class="action-btn" id="delete-current-diary-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3,6 5,6 21,6"></polyline>
+                    <path d="M19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
+            </div>
+        </header>
+        <main class="content" style="padding: 0; background: #fdfbf7;">
+            <div id="diary-read-paper" class="diary-paper">
+                <div class="diary-metadata">
+                    <span id="read-diary-date"></span>
+                    <span id="read-diary-author"></span>
+                </div>
+                <h2 id="read-diary-title" class="diary-title-display"></h2>
+                <div id="read-diary-content" class="diary-content-display"></div>
+                <div id="read-diary-reply-section" style="display:none;">
+                    <hr class="diary-divider">
+                    <div class="reply-header">
+                        <img id="reply-avatar" src="" class="avatar-small">
+                        <span id="reply-name"></span> 的回信
+                    </div>
+                    <div id="reply-content" class="diary-content-display"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="exchange-select-modal" class="modal-overlay">
+        <div class="modal-window">
+            <h3>选择交换对象</h3>
+            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">将你的日记寄给Ta，Ta会阅读并回赠一篇Ta的日记。</p>
+            <div class="form-group">
+                <select id="exchange-char-select" class="form-group"></select>
+            </div>
+            <button id="confirm-exchange-btn" class="btn btn-primary">寄出日记 🕊️</button>
+            <button id="random-exchange-btn" class="btn btn-secondary" style="margin-top: 10px;">随机漂流瓶 🍾</button>
+        </div>
+    </div>
 </div>
+
     <script src="script.js?v=1.2.4" defer></script>
 </body>
 

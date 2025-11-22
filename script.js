@@ -1,6 +1,12 @@
-﻿// ==========================================
-// 🌍 全球城市搜索与天气服务 (完整版)
-// ==========================================
+﻿/*
+ * 小章鱼AI聊天应用 - 核心脚本
+ * Version: 1.3.1
+ * Last Updated: 2025-11-23
+ *
+ * ==========================================
+ * 🌍 全球城市搜索与天气服务 (完整版)
+ * ==========================================
+ */
 
 // 1. 防抖函数 (必须放在最前面，确保搜索框能用)
 function debounce(func, wait) {
@@ -328,18 +334,18 @@ const WeatherService = {
 <hr style="margin:20px 0; opacity:.3">
 <div class="form-group" style="background-color: #fff8fa; padding: 15px; border-radius: 12px; border: 1px solid #fce4ec;">
     <label style="color: var(--primary-color); font-weight: 600; margin-bottom: 10px; display:block;">🤖 后台自动活动 (分钟/次)</label>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;">
-        <div>
-            <small style="display:block; color:#d32f2f; text-align:center;">高频</small>
-            <input type="number" id="bg-freq-high" style="text-align:center;" placeholder="60">
+    <div class="api-frequency-grid">
+        <div class="api-frequency-item">
+            <small style="color:#d32f2f;">高频</small>
+            <input type="number" id="bg-freq-high" placeholder="60">
         </div>
-        <div>
-            <small style="display:block; color:#1976d2; text-align:center;">中频</small>
-            <input type="number" id="bg-freq-medium" style="text-align:center;" placeholder="180">
+        <div class="api-frequency-item">
+            <small style="color:#1976d2;">中频</small>
+            <input type="number" id="bg-freq-medium" placeholder="180">
         </div>
-        <div>
-            <small style="display:block; color:#388e3c; text-align:center;">低频</small>
-            <input type="number" id="bg-freq-low" style="text-align:center;" placeholder="480">
+        <div class="api-frequency-item">
+            <small style="color:#388e3c;">低频</small>
+            <input type="number" id="bg-freq-low" placeholder="480">
         </div>
     </div>
     <button type="button" id="open-bg-activity-manager" class="btn btn-secondary" style="width: 100%;">管理角色活动频率</button>
@@ -361,8 +367,15 @@ const WeatherService = {
 <div class="form-group">
     <label for="minimax-model">语音模型</label>
     <select id="minimax-model">
-        <option value="speech-01" selected>speech-01 (基础版)</option>
-        <option value="speech-02">speech-02 (增强版)</option>
+        <option value="speech-01" selected>Speech-01</option>
+        <option value="speech-01-240228">Speech-01 (240228 特调版)</option>
+        <option value="speech-01-turbo">Speech-01 Turbo</option>
+        <option value="speech-01-hd">Speech-01 HD</option>
+        <option value="speech-02">Speech-02</option>
+        <option value="speech-02-turbo">Speech-02 Turbo</option>
+        <option value="speech-02-hd">Speech-02 HD</option>
+        <option value="speech-2.6-turbo">Speech-2.6 Turbo</option>
+        <option value="speech-2.6-hd">Speech-2.6 HD</option>
     </select>
     <p style="font-size: 12px; color: #888; margin-top: 8px;">* 配置后，角色发送的语音消息将支持点击播放。请在角色设置中单独填写 Voice ID。</p>
 </div>
@@ -539,10 +552,23 @@ const WeatherService = {
             'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons', 'stickerCategories',
             'apiPresets', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
             'globalCssPresets', 'homeSignature', 'forumPosts', 'forumBindings', 'pomodoroTasks', 'pomodoroSettings', 'insWidgetSettings', 'homeWidgetSettings',
-            'naiGlobalPromptPresets', 'fontPresets', 'bgActivitySettings' // ▼▼▼ 新增 ▼▼▼
+            'naiGlobalPromptPresets', 'fontPresets', 'bgActivitySettings', 'diaries', 'diaryFontUrl' // ▼▼▼ 新增：日记存储和字体 ▼▼▼
         ];
-        const appVersion = "1.3.0"; // Current app version
+        const appVersion = "1.3.1"; // Current app version
         const updateLog = [
+            {
+                version: "1.3.1",
+                date: "2025-11-23",
+                notes: [
+                    "新增：日记随机交换功能，写完日记后可直接随机匹配AI角色",
+                    "新增：日记列表快捷交换按钮（🎲），一键随机交换日记",
+                    "改进：优化交换日记界面标题，改为'💌 我的日记本'",
+                    "改进：修复日记阅读页返回按钮白屏问题",
+                    "改进：修复删除日记后日历便签不消失的问题",
+                    "美化：优化删除按钮SVG图标设计，使用标准垃圾桶图标",
+                    "美化：完善图片风格样式（拍立得、胶片、贴纸、邮票、旧时光、黑白）",
+                ]
+            },
             {
                 version: "1.3.0",
                 date: "2025-11-23",
@@ -627,6 +653,8 @@ const WeatherService = {
             // ▼▼▼ 新增：NAI 全局提示词预设 ▼▼▼
             naiGlobalPromptPresets: [],
             fontPresets: [], // ▼▼▼ 新增 ▼▼▼
+            diaries: [], // ▼▼▼ 新增：日记存储 ▼▼▼
+            diaryFontUrl: '', // ▼▼▼ 新增：日记独立字体URL ▼▼▼
         };
         let currentChatId = null, currentChatType = null, isGenerating = false, longPressTimer = null,
             isInMultiSelectMode = false, editingMessageId = null, currentPage = 1, currentTransferMessageId = null,
@@ -874,7 +902,9 @@ const WeatherService = {
                     insWidgetSettings: { avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', bubble1: 'love u.', avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg', bubble2: 'miss u.' },
                     homeWidgetSettings: defaultWidgetSettings,
                     naiGlobalPromptPresets: [], // ▼▼▼ 新增 ▼▼▼
-                    fontPresets: [] // ▼▼▼ 新增 ▼▼▼
+                    fontPresets: [], // ▼▼▼ 新增 ▼▼▼
+                    diaries: [], // ▼▼▼ 新增：日记存储 ▼▼▼
+                    diaryFontUrl: '' // ▼▼▼ 新增：日记独立字体URL ▼▼▼
                 };
                 db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
             });
@@ -2443,7 +2473,7 @@ async function triggerBackgroundEvent(char) {
         const city = char.aiCityObj;
         const time = WeatherService.getLocalTime(city);
         try {
-            const weather = await WeatherService.fetchWeather(city); // 复用已有的服务
+            const weather = await WeatherService.fetchWeather(city);
             if (weather) {
                 envInfo = `\n[当前环境] 地点:${city.displayName}, 时间:${time}, 天气:${weather.desc}, 气温:${Math.round(weather.temp)}度。`;
             }
@@ -2452,35 +2482,42 @@ async function triggerBackgroundEvent(char) {
         }
     }
 
-    // 2. 随机决定分享类型 (增加趣味性)
+    // 2. 随机决定分享类型
     const eventTypes = [
-        "分享一张照片（使用NovelAI或网络图）",
-        "分享一首正在听的歌",
+        "分享一张照片（自拍、风景或美食）",
+        "分享一首正在听的歌的歌词",
         "吐槽当前的天气或气温",
         "分享刚才遇到的一个小八卦/趣事",
         "单纯的碎碎念/撒娇/想念用户",
-        "分享最近看的综艺/剧集/帖子"
+        "分享最近看的综艺/剧集/帖子等"
     ];
-    // 根据人设微调：外向的更容易发照片/八卦
     const randomType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
 
-    // 3. 构建 Prompt
+    // 3. 检查 NAI 开关状态
+    const isNaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
+
+    // 4. 动态构建格式指令
+    let photoFormatInstruction = "";
+    if (isNaiEnabled) {
+        // 开了 NAI：教它生图
+        photoFormatInstruction = `   - 发送生活照/自拍(推荐): [NAI: {"prompt": "英文Prompt..."}] (用于生成你的自拍、食物、风景等真实感照片，Prompt必须是英文)`;
+    } else {
+        // 没开 NAI：教它用模拟格式
+        photoFormatInstruction = `   - 发送生活照/自拍(模拟): [${char.realName}发来的照片/视频：{照片内容描述}] (仅用于文字模拟发送照片，不要编造URL)`;
+    }
+
+    // 5. 构建 Prompt
     let prompt = `你现在处于后台"生活模式"。用户当前不在聊天界面。
-请你根据你的人设 (${char.persona})，主动给用户发送一条微信消息。
+请你根据你的人设 (${char.persona})，主动给用户发送几条消息。
 ${envInfo}
 
-**本次消息的主题是**：${randomType}
+**本轮消息的主题是**：${randomType}
 
 **要求**：
-1. **语气自然**：就像真人闲暇时随手发的一条消息。不要太正式，可以用口语、颜文字。
-2. **格式严格**：必须使用以下标准格式之一（只返回一条消息）：
-   - 普通文本: [${char.realName}的消息：内容]
-   - 发送照片: [${char.realName}发送的表情包：图片URL] (如果是自拍或风景，且开启了NAI，请使用 NAI 格式)
-   - NAI生图(推荐): [NAI: {"prompt": "英文Prompt..."}] (用于生成你的自拍、食物、风景等)
-   - 分享歌曲: [${char.realName}的消息：分享一首好歌🎵《歌名》- 歌手]
-3. **内容结合**：如果是吐槽天气，请结合上面的[当前环境]信息。如果是分享生活，请符合你的兴趣设定。
-4. **不要打招呼**：不要说"你好"、"在吗"，直接说事。
-5. **长度**：2-6句话即可，不要长篇大论。
+1. **语气自然**：就像真人闲暇时随手发的一些消息。不要太正式，可以用口语、表情包、NAI生图（如果开关打开）等消息格式。
+2. **内容结合**：如果是吐槽天气，请结合上面的[当前环境]信息。如果是分享生活，请符合你的兴趣设定。
+3. **不要打招呼**：不要说"你好"、"在吗"，直接说事。
+4. **长度**：2-6句话即可，不要长篇大论。
 
 请直接输出消息内容，不要包含任何解释。`;
 
@@ -2491,7 +2528,7 @@ ${envInfo}
             body: JSON.stringify({
                 model: model,
                 messages: [{ role: 'user', content: prompt }],
-                temperature: 0.9 // 稍微高一点，增加随机性
+                temperature: 0.9
             })
         });
 
@@ -2514,21 +2551,21 @@ ${envInfo}
                 senderId: char.id
             };
 
-            // NAI 特殊处理 (复用已有的逻辑)
+            // NAI 特殊处理
             if (content.includes('[NAI:')) {
+                // 如果没开开关但AI还是发了NAI（极少情况），这里做个兜底或者直接允许（因为Prompt已经控制了）
+                // 这里保持原有逻辑即可，因为Prompt已经做了源头控制
                 const jsonMatch = content.match(/\[NAI:\s*({.*?})\]/);
                 if (jsonMatch) {
                     try {
                         const json = JSON.parse(jsonMatch[1]);
-                        // 异步生成图片 (不阻塞保存)
+                        // 异步生成图片
                         generateNovelAIImageForChat(json.prompt, char.id, 'private').then(imgData => {
                             message.type = 'naiimag';
                             message.imageUrl = imgData.imageUrl;
                             message.fullPrompt = imgData.fullPrompt;
-                            message.content = `[${char.realName}的消息：${json.prompt}]`; // 替换为文本提示
-                            // 更新数据库
+                            message.content = `[${char.realName}的消息：${json.prompt}]`;
                             saveData();
-                            // 如果当前正在看这个角色的聊天，刷新界面
                             if (currentChatId === char.id) {
                                 renderMessages(false, true);
                             }
@@ -2544,17 +2581,15 @@ ${envInfo}
             char.unreadCount = (char.unreadCount || 0) + 1;
             await saveData();
 
-            // 如果当前在列表页或主页，更新红点
             if (document.getElementById('chat-list-screen').classList.contains('active')) {
                 renderChatList();
             }
 
-            // 发送系统通知 (浏览器级)
             if ("Notification" in window && Notification.permission === "granted") {
                 new Notification(char.remarkName, {
                     body: content.replace(/\[.*?的消息：(.*?)\]/, '$1'),
                     icon: char.avatar,
-                    tag: 'bg-activity-' + char.id // 避免重复通知
+                    tag: 'bg-activity-' + char.id
                 });
             }
         }
@@ -2568,6 +2603,7 @@ ${envInfo}
             if (!db.homeWidgetSettings || !db.homeWidgetSettings.topLeft) {
             db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
             }
+            applyDiaryFont(db.diaryFontUrl); // ▼▼▼ 新增：初始化加载日记字体 ▼▼▼
             document.body.addEventListener('click', (e) => {
                 if (e.target.closest('.context-menu')) {
                     e.stopPropagation();
@@ -2600,7 +2636,7 @@ ${envInfo}
                         return;
                     }
                     
-                    if (target === 'music-screen' || target === 'diary-screen' || target === 'piggy-bank-screen') {
+                    if (target === 'music-screen' || target === 'piggy-bank-screen') {
                         showToast('该应用正在开发中，敬请期待！');
                         return;
                     }
@@ -2649,6 +2685,7 @@ ${envInfo}
             setupInsWidgetAvatarModal();
             setupHeartPhotoModal();
             setupPeekCharacterSelectScreen(); // <-- 新增
+            setupDiaryApp(); // ▼▼▼ 新增：初始化交换日记功能 ▼▼▼
 
             // ▼▼▼ 启动后台系统 ▼▼▼
             startBackgroundHeartbeat();
@@ -8119,7 +8156,28 @@ return `${seconds}秒`;
             if (favoritedJournals) {
                 prompt += `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
             }
-            
+
+            // ▼▼▼ 新增：注入交换日记记忆 (同步到聊天) ▼▼▼
+            // 1. 筛选出与当前角色互换过的日记 (状态为 replied 且 replyCharId 匹配)
+            // 2. 为了节省Token，只取最近的 3 篇，且对内容进行适度截断
+            const exchangeDiaryMemories = (db.diaries || [])
+                .filter(d => d.exchangeStatus === 'replied' && d.replyCharId === character.id)
+                .sort((a, b) => a.timestamp - b.timestamp) // 按时间升序，旧 -> 新
+                .slice(-3) // 取最近3篇
+                .map(d => {
+                    // 移除HTML标签，只保留纯文本，并截取前100字
+                    const cleanUserText = d.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').substring(0, 100);
+                    const cleanReplyText = d.replyContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').substring(0, 100);
+                    const dateStr = new Date(d.timestamp).toLocaleDateString();
+                    return `[${dateStr} 的交换日记]\n你收到的(我)："${cleanUserText}..."\n你的回信(你)："${cleanReplyText}..."`;
+                })
+                .join('\n\n');
+
+            if (exchangeDiaryMemories) {
+                prompt += `【交换日记回忆】\n这是我们最近互换过的私密日记，记载了我们更深层的心声，你在聊天中应当记得这些内容：\n${exchangeDiaryMemories}\n\n`;
+            }
+            // ▲▲▲ 新增结束 ▲▲▲
+
             prompt += `角色和对话规则：\n`;
             if (worldBooksBefore) {
                 prompt += `${worldBooksBefore}\n`;
@@ -9900,6 +9958,38 @@ function renderStickerGrid() {
                 e.preventDefault();
                 sendMyGift(giftDescriptionInput.value.trim());
             });
+        }
+
+        // 应用日记独立字体
+        function applyDiaryFont(fontUrl) {
+            const styleId = 'diary-font-style';
+            let styleElement = document.getElementById(styleId);
+            if (!styleElement) {
+                styleElement = document.createElement('style');
+                styleElement.id = styleId;
+                document.head.appendChild(styleElement);
+            }
+
+            if (fontUrl) {
+                const fontName = 'DiaryCustomFont';
+                // 这里的关键是把 --diary-font-family 指向我们加载的自定义字体
+                styleElement.innerHTML = `
+                    @font-face {
+                        font-family: '${fontName}';
+                        src: url('${fontUrl}');
+                    }
+                    :root {
+                        --diary-font-family: '${fontName}', 'Georgia', 'Times New Roman', serif;
+                    }
+                `;
+            } else {
+                // 如果没有URL，恢复默认衬线体
+                styleElement.innerHTML = `
+                    :root {
+                        --diary-font-family: 'Georgia', 'Times New Roman', serif;
+                    }
+                `;
+            }
         }
 
         function setupFontSettingsApp() {
@@ -15345,5 +15435,1283 @@ renderAiWalletTransactions(generatedData.transactions);
             document.body.removeChild(a);
         }
 
+      // ==========================================
+    // 📔 复古日记本 App (Diary System)
+    // ==========================================
+
+    // --- 辅助函数：调用AI识别图片内容 ---
+    async function analyzeImageContent(base64Data) {
+        const { url, key, model, provider } = db.apiSettings;
+        if (!url || !key || !model) return null;
+
+        // 构造 Vision API 请求 (兼容 OpenAI/Claude/Gemini 格式)
+        // 这里以 OpenAI 格式为例，大多数中转商都支持
+        const requestBody = {
+            model: model,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: "请用简短的一句话描述这张图片的内容，用于日记配图说明。格式：[图片内容：xxx]。" },
+                        { type: "image_url", image_url: { url: base64Data } }
+                    ]
+                }
+            ],
+            max_tokens: 100
+        };
+
+        // Gemini 的格式略有不同，做个简单适配
+        if (provider === 'gemini') {
+            // Gemini 格式适配逻辑略，为保持代码简洁，假设用户使用兼容 OpenAI 格式的 API 或中转
+            // 如果是原生 Gemini，需要在这里转换 parts 结构
+        }
+
+        try {
+            const response = await fetch(`${url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) return null;
+            const data = await response.json();
+            return data.choices[0].message.content;
+        } catch (e) {
+            console.error("图片识别失败:", e);
+            return null;
+        }
+      }
+
+    function setupDiaryApp() {
+    let currentEditingDiaryId = null;
+    let currentTab = 'my'; // 'my' or 'received'
+
+    const diaryScreen = document.getElementById('diary-screen');
+    const editorScreen = document.getElementById('diary-editor-screen');
+    const readScreen = document.getElementById('diary-read-screen');
+
+    const diaryList = document.getElementById('diary-list');
+    const createBtn = document.getElementById('create-diary-btn');
+    const tabs = document.querySelectorAll('.diary-tab');
+
+    // Editor Elements
+    const closeEditorBtn = document.getElementById('close-diary-editor-btn');
+    const saveDiaryBtn = document.getElementById('save-diary-btn');
+    const titleInput = document.getElementById('diary-title-input');
+    const contentEditor = document.getElementById('diary-content-editor');
+    const editorDate = document.getElementById('diary-editor-date');
+    const toolbarBtns = document.querySelectorAll('.diary-toolbar .tool-btn');
+    const colorInput = document.getElementById('diary-color-input');
+    const imgInput = document.getElementById('diary-img-input');
+    const exchangeBtn = document.getElementById('exchange-diary-btn');
+    const paperContainer = document.getElementById('diary-paper-container');
+    const bgBtn = document.getElementById('diary-bg-btn');
+
+    // Exchange Modal
+    const exchangeModal = document.getElementById('exchange-select-modal');
+    const confirmExchangeBtn = document.getElementById('confirm-exchange-btn');
+    const randomExchangeBtn = document.getElementById('random-exchange-btn');
+    const charSelect = document.getElementById('exchange-char-select');
+
+    // Read Screen Elements
+    const closeReadBtn = document.getElementById('close-diary-read-btn');
+    const deleteDiaryBtn = document.getElementById('delete-current-diary-btn');
+
+      // --- 日历功能模块 开始 ---
+    let calCurrentDate = new Date();
+    const calendarGrid = document.getElementById('diary-calendar-grid');
+    const monthYearDisplay = document.getElementById('cal-month-year');
+    const summaryContainer = document.getElementById('diary-day-summary-container');
+
+    // 渲染日历
+    function renderCalendar() {
+        calendarGrid.innerHTML = '';
+        const year = calCurrentDate.getFullYear();
+        const month = calCurrentDate.getMonth();
+
+        // 更新标题
+        monthYearDisplay.textContent = `${year}年 ${month + 1}月`;
+
+        // 获取当月第一天是周几
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        // 获取当月总天数
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        // 1. 填充空白 (上个月的余部)
+        for (let i = 0; i < firstDayIndex; i++) {
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'cal-day empty';
+            calendarGrid.appendChild(emptyDiv);
+        }
+
+        // 2. 填充日期
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dayEl = document.createElement('div');
+            dayEl.className = 'cal-day';
+            dayEl.textContent = day;
+
+            // 检查这一天是否有日记
+            const checkDateStr = `${year}/${month + 1}/${day}`;
+            // 查找是否有这一天的日记 (任何一篇)
+            const hasDiary = db.diaries.some(d => {
+                const dDate = new Date(d.timestamp);
+                return dDate.getFullYear() === year &&
+                       dDate.getMonth() === month &&
+                       dDate.getDate() === day;
+            });
+
+            if (hasDiary) {
+                dayEl.classList.add('has-diary');
+            }
+
+            // 选中状态 (如果是今天，默认不选中，只有点击才选中；或者默认选中今天)
+            // 这里逻辑是：点击后添加 active
+            dayEl.addEventListener('click', () => {
+                // 移除其他 active
+                document.querySelectorAll('.cal-day').forEach(el => el.classList.remove('active'));
+                dayEl.classList.add('active');
+                renderDaySummary(year, month, day);
+            });
+
+            calendarGrid.appendChild(dayEl);
+        }
+    }
+
+    // 渲染选中日期的"揉皱纸条"
+    function renderDaySummary(year, month, day) {
+        summaryContainer.innerHTML = '';
+        summaryContainer.style.display = 'none';
+
+        // 找到当天的所有日记
+        const dayDiaries = db.diaries.filter(d => {
+            const dDate = new Date(d.timestamp);
+            return dDate.getFullYear() === year &&
+                   dDate.getMonth() === month &&
+                   dDate.getDate() === day;
+        });
+
+        if (dayDiaries.length === 0) {
+            // 如果没日记，也可以显示一句提示，或者直接不显示容器
+            // 这里选择不显示容器，保持简洁
+            return;
+        }
+
+        summaryContainer.style.display = 'block';
+
+        dayDiaries.forEach(diary => {
+            // 1. 用户的日记纸条 (上)
+            const userStrip = document.createElement('div');
+            userStrip.className = 'crumpled-strip user-strip';
+            const timeStr = new Date(diary.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            // 提取纯文本预览
+            const cleanContent = diary.content.replace(/<[^>]+>/g, '').trim();
+            const firstSentence = cleanContent.split(/[。！？.!?]/)[0] || cleanContent;
+
+            userStrip.innerHTML = `
+                <div class="strip-meta">
+                    <span>${timeStr}</span>
+                    <span>By Me</span>
+                </div>
+                <div class="strip-title">${diary.title}</div>
+                <div class="strip-preview">${firstSentence}...</div>
+            `;
+            userStrip.addEventListener('click', () => openReader(diary));
+            summaryContainer.appendChild(userStrip);
+
+            // 2. AI的回信纸条 (下，如果有)
+            if (diary.exchangeStatus === 'replied' && diary.replyContent) {
+                const aiStrip = document.createElement('div');
+                aiStrip.className = 'crumpled-strip ai-strip';
+
+                // 获取AI名字 (缓存中找，或者显示默认)
+                const char = db.characters.find(c => c.id === diary.replyCharId);
+                const charName = char ? char.remarkName : 'Ta';
+
+                const cleanReply = diary.replyContent.replace(/<[^>]+>/g, '').trim();
+                const firstReplySentence = cleanReply.split(/[。！？.!?]/)[0] || cleanReply;
+
+                aiStrip.innerHTML = `
+                    <div class="strip-meta">
+                        <span>回信</span>
+                        <span>From ${charName}</span>
+                    </div>
+                    <div class="strip-title">Re: ${diary.title}</div>
+                    <div class="strip-preview">${firstReplySentence}...</div>
+                `;
+                // 点击AI纸条也是打开同一篇日记的阅读器
+                aiStrip.addEventListener('click', () => openReader(diary));
+                summaryContainer.appendChild(aiStrip);
+            }
+        });
+    }
+
+    // 绑定翻页按钮
+    document.getElementById('cal-prev-btn').addEventListener('click', () => {
+        calCurrentDate.setMonth(calCurrentDate.getMonth() - 1);
+        renderCalendar();
+        summaryContainer.style.display = 'none'; // 翻页时隐藏摘要
     });
+
+    document.getElementById('cal-next-btn').addEventListener('click', () => {
+        calCurrentDate.setMonth(calCurrentDate.getMonth() + 1);
+        renderCalendar();
+        summaryContainer.style.display = 'none';
+    });
+
+    // 初始渲染
+    renderCalendar();
+    // --- 日历功能模块 结束 ---
+
+    // 1. Tab Switching
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentTab = tab.dataset.type;
+            renderDiaryList();
+        });
+    });
+
+    // 2. Open Editor (Create New)
+    createBtn.addEventListener('click', () => {
+        // ▼▼▼ 新增：限制一天只能写一篇 ▼▼▼
+        const now = new Date();
+        // 获取今天的日期字符串 (例如 "Fri Nov 24 2025")
+        const todayStr = now.toDateString();
+
+        // 在数据库中查找是否已有今天的日记
+        const hasDiaryToday = db.diaries.some(d => {
+            return new Date(d.timestamp).toDateString() === todayStr;
+        });
+
+        if (hasDiaryToday) {
+            return showToast('一天只能写一篇日记哦，去列表里看看今天的记录吧。');
+        }
+        // ▲▲▲ 新增结束 ▲▲▲
+
+        currentEditingDiaryId = null;
+        openEditor();
+    });
+
+    // 3. Close Editor
+    closeEditorBtn.addEventListener('click', () => {
+        if(confirm('确定要放弃当前的编辑吗？')) {
+            switchScreen('diary-screen');
+        }
+    });
+
+    // ==========================
+    // 🚑【修复白屏】新增：阅读页返回按钮逻辑
+    // ==========================
+    if (closeReadBtn) {
+        closeReadBtn.addEventListener('click', () => {
+            // 返回日记列表页
+            renderDiaryList(); // 刷新列表以显示最新状态
+            switchScreen('diary-screen');
+        });
+    }
+    // ==========================
+
+    // 4. Toolbar Actions
+    toolbarBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const cmd = btn.dataset.cmd;
+            if (cmd) {
+                e.preventDefault(); // Prevent losing focus
+                if (cmd === 'insertUnorderedList') {
+                    // Insert custom Todo item
+                    document.execCommand('insertHTML', false, '<div class="diary-todo-item">新待办事项</div>');
+                } else {
+                    document.execCommand(cmd, false, null);
+                }
+            } else if (btn.id === 'diary-color-btn') {
+                colorInput.click();
+            } else if (btn.id === 'diary-img-btn') {
+                imgInput.click();
+            }
+        });
+    });
+
+    // ▼▼▼ 新增：日记字体设置按钮事件绑定 ▼▼▼
+    const diaryFontBtn = document.getElementById('diary-font-set-btn');
+    if (diaryFontBtn) {
+        diaryFontBtn.addEventListener('click', async () => {
+            // 这里简单起见使用 prompt，你也可以做一个像全局设置那样的弹窗
+            const currentUrl = db.diaryFontUrl || '';
+            const newUrl = prompt('请输入日记本专用的字体URL (TTF/WOFF)\n留空则恢复默认衬线体:', currentUrl);
+
+            if (newUrl !== null) { // 用户没有点取消
+                db.diaryFontUrl = newUrl.trim();
+                await saveData(); // 保存到全局设置
+                applyDiaryFont(db.diaryFontUrl); // 立即应用
+                showToast('日记字体已更新');
+            }
+        });
+    }
+
+    // 字体大小调节功能
+    let currentDiaryFontSize = parseInt(localStorage.getItem('diaryFontSize')) || 17;
+
+    // 应用当前字体大小
+    function applyDiaryFontSize(size) {
+        document.documentElement.style.setProperty('--diary-font-size', size + 'px');
+        currentDiaryFontSize = size;
+        localStorage.setItem('diaryFontSize', size);
+    }
+
+    // 初始化字体大小
+    applyDiaryFontSize(currentDiaryFontSize);
+
+    // 字体增大按钮
+    const fontIncreaseBtn = document.getElementById('diary-font-size-increase-btn');
+    if (fontIncreaseBtn) {
+        fontIncreaseBtn.addEventListener('click', () => {
+            if (currentDiaryFontSize < 30) { // 最大30px
+                applyDiaryFontSize(currentDiaryFontSize + 2);
+                showToast(`字体大小: ${currentDiaryFontSize}px`);
+            } else {
+                showToast('字体已达到最大');
+            }
+        });
+    }
+
+    // 字体减小按钮
+    const fontDecreaseBtn = document.getElementById('diary-font-size-decrease-btn');
+    if (fontDecreaseBtn) {
+        fontDecreaseBtn.addEventListener('click', () => {
+            if (currentDiaryFontSize > 12) { // 最小12px
+                applyDiaryFontSize(currentDiaryFontSize - 2);
+                showToast(`字体大小: ${currentDiaryFontSize}px`);
+            } else {
+                showToast('字体已达到最小');
+            }
+        });
+    }
+
+    // 文本对齐功能（循环切换）
+    const alignBtn = document.getElementById('diary-align-btn');
+    const alignments = ['left', 'center', 'right'];
+    const alignIcons = ['⬅', '☰', '➡'];
+    const alignNames = ['左对齐', '居中对齐', '右对齐'];
+    let currentAlignIndex = 0;
+
+    if (alignBtn) {
+        alignBtn.addEventListener('click', () => {
+            // 切换到下一个对齐方式
+            currentAlignIndex = (currentAlignIndex + 1) % alignments.length;
+            const newAlignment = alignments[currentAlignIndex];
+
+            // 执行对齐命令
+            document.execCommand(`justify${newAlignment.charAt(0).toUpperCase() + newAlignment.slice(1)}`);
+
+            // 更新按钮图标
+            alignBtn.querySelector('span').textContent = alignIcons[currentAlignIndex];
+
+            // 更新提示文字
+            alignBtn.title = `文本对齐 - ${alignNames[currentAlignIndex]}`;
+
+            showToast(`已切换：${alignNames[currentAlignIndex]}`);
+        });
+    }
+
+    // 工具栏滑动检测和边缘提示
+    function checkToolbarScrollable() {
+        const toolbar = document.querySelector('.diary-toolbar');
+        if (toolbar) {
+            // 检查工具栏是否可滚动
+            const isScrollable = toolbar.scrollWidth > toolbar.clientWidth;
+
+            if (isScrollable) {
+                toolbar.classList.add('scrollable');
+            } else {
+                toolbar.classList.remove('scrollable');
+            }
+        }
+    }
+
+    // 窗口大小改变时重新检测
+    window.addEventListener('resize', checkToolbarScrollable);
+
+    // DOM加载完成后检测
+    setTimeout(checkToolbarScrollable, 100);
+
+    // Color Picker
+    colorInput.addEventListener('input', (e) => {
+        document.execCommand('foreColor', false, e.target.value);
+    });
+
+    // Image Upload (Updated for Collage Style V2)
+    imgInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            try {
+                const url = await compressImage(file, { quality: 0.7, maxWidth: 600 });
+                const rotation = (Math.random() * 6 - 3).toFixed(1);
+                // 默认样式：拍立得，z-index: 1，无位移
+                const imgHtml = `<img src="${url}" class="img-style-polaroid" style="transform: rotate(${rotation}deg) translate(0px, 0px); z-index: 1; max-width: 80%;" alt="拼贴照片">`;
+
+                document.execCommand('insertHTML', false, imgHtml);
+                document.execCommand('insertHTML', false, '<br><br>'); // 换行防粘连
+
+            } catch (err) {
+                console.error(err);
+                showToast('图片插入失败');
+            }
+        }
+        e.target.value = null;
+    });
+
+    // --- 📝 经典信纸切换逻辑 (Classic Paper Switcher) ---
+
+    // 定义三种基础样式
+    const classicPatterns = [
+        { name: '横线信纸', style: 'linear-gradient(#e1e1e1 1px, transparent 1px)', size: '100% 30px' },
+        { name: '点阵笔记', style: 'radial-gradient(#d2d2d2 1px, transparent 1px)', size: '20px 20px' },
+        { name: '纯白画纸', style: 'none', size: 'auto' }
+    ];
+    let currentPatternIndex = 0;
+
+    // 点击按钮：切换基础样式
+    bgBtn.addEventListener('click', () => {
+        // 1. 如果当前正在使用自定义背景，先清除自定义，恢复到默认样式
+        if (currentCustomBgUrl) {
+            applyCustomBackground(null);
+            showToast('已恢复默认信纸');
+            return;
+        }
+
+        // 2. 循环切换样式
+        currentPatternIndex = (currentPatternIndex + 1) % classicPatterns.length;
+        const nextPattern = classicPatterns[currentPatternIndex];
+
+        // 3. 应用样式
+        paperContainer.style.backgroundImage = nextPattern.style;
+        paperContainer.style.backgroundSize = nextPattern.size;
+
+        showToast(`已切换：${nextPattern.name}`);
+    });
+
+    // --- 🆕 自定义背景逻辑 (Custom Background) ---
+    const customBgInput = document.getElementById('diary-custom-bg-upload');
+    let currentCustomBgUrl = null; // 临时存储当前的自定义背景
+
+    // 辅助函数：应用自定义背景
+    function applyCustomBackground(url) {
+        if (!url) {
+            // 如果 url 为空，说明是移除自定义背景
+            paperContainer.style.backgroundImage = ''; // 清空内联样式
+            paperContainer.classList.remove('custom-bg-active');
+            currentCustomBgUrl = null;
+            // 恢复当前的样式
+            const currentPattern = classicPatterns[currentPatternIndex] || classicPatterns[0];
+            paperContainer.style.backgroundImage = currentPattern.style;
+            paperContainer.style.backgroundSize = currentPattern.size;
+            return;
+        }
+
+        // 应用新背景
+        currentCustomBgUrl = url;
+        // 1. 清除类名，防止颜色干扰
+        paperContainer.className = 'diary-paper';
+        // 2. 添加纯净模式类
+        paperContainer.classList.add('custom-bg-active');
+        // 3. 设置背景图
+        paperContainer.style.backgroundImage = `url('${url}')`;
+    }
+
+    // 处理文件上传
+    customBgInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            try {
+                showToast('正在处理背景图...');
+                // 稍微压缩一下背景图，最大宽度1080即可
+                const url = await compressImage(file, { quality: 0.8, maxWidth: 1080 });
+                applyCustomBackground(url);
+                showToast('自定义背景已应用 (无滤镜模式)');
+            } catch (err) {
+                showToast('图片处理失败');
+            }
+        }
+        e.target.value = null;
+    });
+
+    // 为信纸按钮添加【右键/长按】菜单
+    const handleBgBtnLongPress = (e) => {
+        e.preventDefault(); // 阻止默认菜单
+        e.stopPropagation();
+
+        // 调用你现有的 createContextMenu 函数
+        createContextMenu([
+            {
+                label: '🖼️ 上传本地图片',
+                action: () => customBgInput.click()
+            },
+            {
+                label: '🔗 输入图片链接',
+                action: () => {
+                    const url = prompt("请输入图片 URL:");
+                    if (url && url.trim()) {
+                        applyCustomBackground(url.trim());
+                    }
+                }
+            },
+            {
+                label: '🔙 恢复默认信纸',
+                action: () => applyCustomBackground(null) // 传 null 恢复
+            }
+        ], e.clientX, e.clientY);
+    };
+
+    // 绑定右键 (PC)
+    bgBtn.addEventListener('contextmenu', handleBgBtnLongPress);
+
+    // 绑定长按 (Mobile)
+    let bgBtnTimer;
+    bgBtn.addEventListener('touchstart', (e) => {
+        bgBtnTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            // 伪造一个类似鼠标事件的对象传给 handleBgBtnLongPress
+            handleBgBtnLongPress({
+                preventDefault: () => e.preventDefault(),
+                stopPropagation: () => e.stopPropagation(),
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+        }, 500); // 500ms 长按
+    });
+    bgBtn.addEventListener('touchend', () => clearTimeout(bgBtnTimer));
+    bgBtn.addEventListener('touchmove', () => clearTimeout(bgBtnTimer));
+
+    // 修改：点击按钮时，如果有自定义背景，先清除自定义背景，再切换学院颜色
+    const originalBgBtnClick = bgBtn.onclick;
+    bgBtn.addEventListener('click', () => {
+        if (currentCustomBgUrl) {
+            applyCustomBackground(null); // 先清除自定义
+            return; // 这一次点击只做清除，不切换颜色
+        }
+        // 执行原有的切换逻辑
+        if (originalBgBtnClick) originalBgBtnClick();
+    });
+
+    // 5. Save Diary
+    // 5. Save Diary (Updated with Image Recognition)
+    saveDiaryBtn.addEventListener('click', async () => {
+        const title = titleInput.value.trim() || '无标题';
+
+        // --- 📷 图片识别逻辑开始 ---
+        // 获取编辑器内所有图片
+        const images = contentEditor.querySelectorAll('img');
+        let hasNewAnalysis = false;
+
+        if (images.length > 0) {
+            // 检查是否有未识别的图片 (没有 alt 属性或者 alt 为空的)
+            const unanalyzedImages = Array.from(images).filter(img => !img.alt || !img.alt.startsWith('[图片内容'));
+
+            if (unanalyzedImages.length > 0) {
+                showToast(`正在识别 ${unanalyzedImages.length} 张图片，请稍候...`);
+                saveDiaryBtn.disabled = true; // 防止重复点击
+
+                // 遍历识别
+                for (let img of unanalyzedImages) {
+                    const desc = await analyzeImageContent(img.src);
+                    if (desc) {
+                        img.alt = desc; // ★★★ 核心：将描述存入 alt 属性
+                        hasNewAnalysis = true;
+                    }
+                }
+                saveDiaryBtn.disabled = false;
+                if (hasNewAnalysis) showToast('图片识别完成！');
+            }
+        }
+        // --- 📷 图片识别逻辑结束 ---
+
+        const content = contentEditor.innerHTML; // 此时 innerHTML 里的 img 标签已经带有 alt 了
+        const date = new Date();
+
+        const diaryData = {
+            id: currentEditingDiaryId || `diary_${Date.now()}`,
+            title: title,
+            content: content,
+            timestamp: currentEditingDiaryId ? undefined : Date.now(),
+            updatedAt: Date.now(),
+            // 新增：保存当前基础样式索引
+            patternIndex: currentPatternIndex,
+            // 新增：保存自定义背景URL
+            customBg: currentCustomBgUrl || null,
+            // 保留兼容性：旧的背景样式
+            bgStyle: paperContainer.style.backgroundImage,
+            bgSize: paperContainer.style.backgroundSize,
+            exchangeStatus: 'draft'
+        };
+
+        if (currentEditingDiaryId) {
+            const idx = db.diaries.findIndex(d => d.id === currentEditingDiaryId);
+            if (idx > -1) {
+                // 保留原有的 exchangeStatus 和 reply 信息
+                const original = db.diaries[idx];
+                // 如果原来是 'sent' 或 'replied'，修改后重置为 'draft' 允许重新发送吗？
+                // 这里假设修改后还是保持原状态，除非是显式的新日记
+                // 为了简单，我们保持原状态，除非是显式的新日记
+                db.diaries[idx] = { ...original, ...diaryData, exchangeStatus: original.exchangeStatus, timestamp: original.timestamp };
+            }
+        } else {
+            db.diaries.push(diaryData);
+        }
+
+        await saveData();
+        showToast('日记已保存');
+        renderDiaryList();
+        switchScreen('diary-screen');
+
+        // 🎉 新增：保存后提供随机交换选项（仅对新日记有效）
+        if (!currentEditingDiaryId) {
+            const chars = db.characters.filter(c => c.id.startsWith('char_'));
+            if (chars.length > 0) {
+                setTimeout(() => {
+                    const randomChar = chars[Math.floor(Math.random() * chars.length)];
+                    if (confirm(`💌 要不要把这篇日记随机交换给${randomChar.remarkName}？\n\n点击"确定"发送给随机角色，点击"取消"稍后自己选择。`)) {
+                        sendDiaryToChar(diaryData, randomChar.id);
+                    }
+                }, 800);
+            }
+        }
+    });
+
+    // 6. Render List
+    function renderDiaryList() {
+        diaryList.innerHTML = '';
+        const filteredDiaries = db.diaries.filter(d => {
+            if (currentTab === 'my') return true; // Show all my diaries (including exchanged ones)
+            if (currentTab === 'received') return d.exchangeStatus === 'replied';
+            return true;
+        }).sort((a, b) => b.timestamp - a.timestamp);
+
+        if (filteredDiaries.length === 0) {
+            document.getElementById('no-diary-placeholder').style.display = 'block';
+        } else {
+            document.getElementById('no-diary-placeholder').style.display = 'none';
+            filteredDiaries.forEach(diary => {
+                const li = document.createElement('li');
+                li.className = 'diary-list-item';
+                const date = new Date(diary.timestamp);
+                const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
+
+                let badge = '';
+                if (diary.exchangeStatus === 'sent') badge = '<span class="diary-status-badge">漂流中...</span>';
+                if (diary.exchangeStatus === 'replied') badge = '<span class="diary-status-badge replied">已收到回信</span>';
+
+                // 为未交换的日记添加快捷交换按钮
+                let quickExchangeBtn = '';
+                if (diary.exchangeStatus === 'draft') {
+                    const chars = db.characters.filter(c => c.id.startsWith('char_'));
+                    if (chars.length > 0) {
+                        quickExchangeBtn = `<button class="quick-exchange-btn" title="随机交换给角色">🎲</button>`;
+                    }
+                }
+
+                li.innerHTML = `
+                    ${badge}
+                    <div class="diary-item-main">
+                        <div class="diary-item-date">${dateStr}</div>
+                        <div class="diary-item-title">${diary.title}</div>
+                        <div class="diary-item-preview">${diary.content.replace(/<[^>]+>/g, '')}</div>
+                    </div>
+                    ${quickExchangeBtn}
+                `;
+
+                // 主内容区域点击打开日记
+                li.querySelector('.diary-item-main').addEventListener('click', () => openReader(diary));
+
+                // 快捷交换按钮点击事件
+                const quickBtn = li.querySelector('.quick-exchange-btn');
+                if (quickBtn) {
+                    quickBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const chars = db.characters.filter(c => c.id.startsWith('char_'));
+                        const randomChar = chars[Math.floor(Math.random() * chars.length)];
+                        if (confirm(`🎲 随机把这篇日记交换给${randomChar.remarkName}？`)) {
+                            sendDiaryToChar(diary, randomChar.id);
+                        }
+                    });
+                }
+                diaryList.appendChild(li);
+            });
+        }
+
+        // ▼▼▼ 新增：列表更新时同步刷新日历 ▼▼▼
+        renderCalendar();
+    }
+
+    // 7. Open Editor
+    function openEditor(diary = null) {
+        if (diary) {
+            currentEditingDiaryId = diary.id;
+            titleInput.value = diary.title;
+            contentEditor.innerHTML = diary.content;
+            // --- 优化：生成更适合圆形邮戳的日期格式 ---
+            const now = new Date(diary.timestamp);
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+
+            // 使用 HTML 换行，将日期分为三部分显示
+            // 效果：
+            //  2025
+            // NOV.23
+            // POST
+            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            const enMonth = monthNames[now.getMonth()];
+
+            // 这里插入 HTML
+            editorDate.innerHTML = `
+                <div style="font-size:10px; transform:scale(0.9);">${yyyy}</div>
+                <div style="font-size:16px; margin: 2px 0;">${enMonth}.${dd}</div>
+                <div style="font-size:9px; letter-spacing:2px;">POST</div>
+            `;
+            // 1. 先重置状态
+            paperContainer.className = 'diary-paper default-paper';
+            paperContainer.style.backgroundImage = '';
+            currentCustomBgUrl = null;
+
+            // 2. 优先处理自定义背景
+            if (diary.customBg) {
+                applyCustomBackground(diary.customBg);
+                // 即使是自定义背景，也记录一下原来的样式索引，以防用户点击"恢复"
+                currentPatternIndex = diary.patternIndex || 0;
+            } else {
+                // 3. 如果没有自定义背景，应用保存的基础样式
+                currentCustomBgUrl = null;
+                paperContainer.classList.remove('custom-bg-active');
+
+                currentPatternIndex = (diary.patternIndex !== undefined) ? diary.patternIndex : 0;
+                const pattern = classicPatterns[currentPatternIndex] || classicPatterns[0];
+
+                paperContainer.style.backgroundImage = pattern.style;
+                paperContainer.style.backgroundSize = pattern.size;
+            }
+
+            // If already sent, hide exchange button to prevent double sending
+            if (diary.exchangeStatus !== 'draft') {
+                document.querySelector('.diary-bottom-actions').style.display = 'none';
+            } else {
+                document.querySelector('.diary-bottom-actions').style.display = 'block';
+            }
+        } else {
+            // New Diary
+            currentEditingDiaryId = null;
+            titleInput.value = '';
+            contentEditor.innerHTML = '';
+            // --- 新建日记时也使用邮戳格式 ---
+            const nowNew = new Date();
+            const yyyyNew = nowNew.getFullYear();
+            const ddNew = String(nowNew.getDate()).padStart(2, '0');
+            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            const enMonthNew = monthNames[nowNew.getMonth()];
+
+            editorDate.innerHTML = `
+                <div style="font-size:10px; transform:scale(0.9);">${yyyyNew}</div>
+                <div style="font-size:16px; margin: 2px 0;">${enMonthNew}.${ddNew}</div>
+                <div style="font-size:9px; letter-spacing:2px;">POST</div>
+            `;
+
+            // --- 新建日记：重置为默认（横线） ---
+            currentCustomBgUrl = null;
+            paperContainer.classList.remove('custom-bg-active');
+            currentPatternIndex = 0;
+            paperContainer.style.backgroundImage = classicPatterns[0].style;
+            paperContainer.style.backgroundSize = classicPatterns[0].size;
+
+            document.querySelector('.diary-bottom-actions').style.display = 'none'; // Must save first
+        }
+        switchScreen('diary-editor-screen');
+    }
+
+    // 8. Open Reader
+    function openReader(diary) {
+        document.getElementById('read-diary-title').textContent = diary.title;
+        document.getElementById('read-diary-date').textContent = new Date(diary.timestamp).toLocaleString();
+        document.getElementById('read-diary-author').textContent = 'By Me';
+
+        const contentDiv = document.getElementById('read-diary-content');
+        contentDiv.innerHTML = diary.content;
+
+        // Apply background style and theme
+        const paper = document.getElementById('diary-read-paper');
+
+        // 先重置状态
+        paper.className = 'diary-paper';
+        paper.style.backgroundImage = '';
+
+        if (diary.customBg) {
+            // 阅读模式也应用纯净样式
+            paper.classList.add('custom-bg-active');
+            paper.style.backgroundImage = `url('${diary.customBg}')`;
+        } else {
+            // 读取保存的样式索引
+            const idx = (diary.patternIndex !== undefined) ? diary.patternIndex : 0;
+            const pattern = classicPatterns[idx] || classicPatterns[0];
+
+            paper.style.backgroundImage = pattern.style;
+            paper.style.backgroundSize = pattern.size;
+        }
+
+        // Show Reply if exists
+        const replySection = document.getElementById('read-diary-reply-section');
+        if (diary.exchangeStatus === 'replied' && diary.replyContent) {
+            replySection.style.display = 'block';
+            const char = db.characters.find(c => c.id === diary.replyCharId);
+            document.getElementById('reply-avatar').src = char ? char.avatar : 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+            document.getElementById('reply-name').textContent = char ? char.remarkName : '神秘人';
+            document.getElementById('reply-content').innerHTML = diary.replyContent;
+        } else {
+            replySection.style.display = 'none';
+        }
+
+        // Handle Delete
+        deleteDiaryBtn.onclick = async () => {
+            if(confirm('确定删除这篇日记吗？')) {
+                db.diaries = db.diaries.filter(d => d.id !== diary.id);
+                await saveData();
+                renderDiaryList();
+
+                // 🗓️ 刷新日历和便签显示
+                renderCalendar();
+                const summaryContainer = document.getElementById('diary-day-summary-container');
+                if (summaryContainer) {
+                    summaryContainer.innerHTML = '';
+                    summaryContainer.style.display = 'none';
+                }
+
+                switchScreen('diary-screen');
+            }
+        };
+
+        // Allow edit if draft
+        if (diary.exchangeStatus === 'draft') {
+             contentDiv.onclick = () => openEditor(diary);
+             contentDiv.title = "点击编辑";
+             contentDiv.style.cursor = "text";
+        } else {
+             contentDiv.onclick = null;
+             contentDiv.title = "";
+             contentDiv.style.cursor = "default";
+        }
+
+        switchScreen('diary-read-screen');
+    }
+
+    // 9. Exchange Logic
+    function openExchangeModal(diary) {
+        // Populate Select
+        charSelect.innerHTML = '';
+        const chars = db.characters.filter(c => c.id.startsWith('char_')); // Only private chars
+        if (chars.length === 0) {
+            charSelect.innerHTML = '<option>暂无联系人</option>';
+            confirmExchangeBtn.disabled = true;
+        } else {
+            confirmExchangeBtn.disabled = false;
+            chars.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.remarkName;
+                charSelect.appendChild(opt);
+            });
+        }
+        exchangeModal.classList.add('visible');
+
+        confirmExchangeBtn.onclick = async () => {
+            const charId = charSelect.value;
+            if (!charId) return;
+            await sendDiaryToChar(diary, charId);
+        };
+
+        randomExchangeBtn.onclick = async () => {
+            if (chars.length === 0) return;
+            const randomChar = chars[Math.floor(Math.random() * chars.length)];
+            await sendDiaryToChar(diary, randomChar.id);
+        };
+    }
+
+    async function sendDiaryToChar(diary, charId) {
+        exchangeModal.classList.remove('visible');
+        showToast('日记已寄出，正在等待回信...');
+
+        // Update status locally
+        diary.exchangeStatus = 'sent';
+        await saveData();
+        renderDiaryList(); // Update UI
+        switchScreen('diary-screen');
+
+        // Trigger AI Generation
+        const char = db.characters.find(c => c.id === charId);
+        if (!char) return;
+
+        try {
+            const replyContent = await generateAiDiaryReply(char, diary);
+
+            // Update Diary with Reply
+            diary.exchangeStatus = 'replied';
+            diary.replyContent = replyContent;
+            diary.replyCharId = charId;
+            diary.replyTimestamp = Date.now();
+
+            // Send notification toast
+            showToast({
+                avatar: char.avatar,
+                name: char.remarkName,
+                message: `回赠了一篇日记给你`
+            });
+
+            await saveData();
+            renderDiaryList();
+
+        } catch (error) {
+            console.error('Diary exchange failed:', error);
+            showToast('对方似乎很忙，没有回信 (生成失败)');
+            diary.exchangeStatus = 'draft'; // Revert
+            await saveData();
+        }
+    }
+
+    async function generateAiDiaryReply(char, userDiary) {
+        const { url, key, model } = db.apiSettings;
+        if (!url || !key || !model) throw new Error("API not configured");
+
+        // --- 📷 解析日记内容 (包含图片描述) ---
+        let rawContent = userDiary.content;
+
+        // 1. 先把 img 标签替换成它的 alt 文本
+        // 正则含义：找到所有 img 标签，提取 alt 属性的值
+        rawContent = rawContent.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n【用户附图：$1】\n');
+
+        // 2. 再清除其他 HTML 标签
+        const cleanUserContent = rawContent.replace(/<[^>]+>/g, '\n').trim();
+        // --- 解析结束 ---
+
+        // 1. 检查 NovelAI 开关状态
+        const isNaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
+
+        // ▼▼▼ 新增：读取过往日记记忆 (同步到日记生成) ▼▼▼
+        const pastDiaries = (db.diaries || [])
+            .filter(d => d.exchangeStatus === 'replied' && d.replyCharId === char.id && d.id !== userDiary.id) // 排除当前这一篇
+            .sort((a, b) => b.timestamp - a.timestamp) // 倒序，最新的在前
+            .slice(0, 3) // 取最近3篇
+            .map(d => {
+                const cleanReply = d.replyContent.replace(/<[^>]+>/g, '').substring(0, 150);
+                return `- 之前的回信摘要: "${cleanReply}..."`;
+            })
+            .join('\n');
+
+        let memoryContext = "";
+        if (pastDiaries) {
+            memoryContext = `\n为了保持连贯性，请参考你之前写给我的日记片段：\n${pastDiaries}\n`;
+        }
+        // ▲▲▲ 新增结束 ▲▲▲
+
+        // 2. 动态构建 Prompt
+        let prompt = `你现在正在进行"交换日记"活动。
+你的角色是：${char.realName}。
+人设：${char.persona}。
+${memoryContext}
+你收到了一篇来自用户（${char.myName}）的日记：
+=== 用户日记开始 ===
+标题：${userDiary.title}
+内容：
+${cleanUserContent}
+=== 用户日记结束 ===
+
+任务：请你写一篇**你自己的日记**作为回信。
+要求：
+1. **排版精美**：必须使用HTML格式输出。使用 <h3> 作为小标题，<p> 分段。可以使用 <span style="color:#8B4513">...</span> 来改变重点文字颜色（使用复古色系如深褐、墨绿、酒红）。
+2. **内容侧重**：
+   - 70% 描写你今天的生活、工作、学习、遇到的趣事、碎碎念或胡思乱想。内容必须极其贴合你的人设，展现你独立的生活轨迹，不要三句不离用户。
+   - 30% 对用户日记内容的自然回应、共鸣或安慰。
+3. **风格**：复古、优雅、真诚、有着信纸般的质感。文笔要好，拒绝流水账。`;
+
+        // ★★★ 关键修改：只有开启了开关，才教AI生成图片 ★★★
+        if (isNaiEnabled) {
+            prompt += `
+4. **配图**：你可以插入一张照片来展示你的生活。
+   - 如果你想分享照片，请在HTML中插入：\`[NAI: {"prompt": "英文画面描述..."}]\`。系统会自动将其替换为图片。
+   - 画面描述必须详细、唯美，符合你的生活场景。`;
+        } else {
+            prompt += `
+4. **纯文字**：请专注于文字描写，不要尝试发送图片。`;
+        }
+
+        prompt += `
+5. **直接输出HTML**，不要包含 \`\`\`html 标记。`;
+
+        const response = await fetch(`${url}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.85
+            })
+        });
+
+        const data = await response.json();
+        let content = data.choices[0].message.content;
+
+        // Clean markdown blocks if any
+        content = content.replace(/^```html|```$/g, '').trim();
+
+        // Handle NAI Generation
+        if (content.includes('[NAI:')) {
+            const naiMatch = content.match(/\[NAI:\s*({.*?})\]/);
+
+            // 再次检查开关（双重保险）
+            if (naiMatch && isNaiEnabled) {
+                try {
+                    const json = JSON.parse(naiMatch[1]);
+                    // Generate Image
+                    const imgData = await generateNovelAIImageForChat(json.prompt, char.id, 'private');
+                    // Replace tag with img
+                    const imgHtml = `<img src="${imgData.imageUrl}" alt="Life Photo" style="max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); margin: 15px 0;">`;
+                    content = content.replace(naiMatch[0], imgHtml);
+                } catch (e) {
+                    console.error('Diary Image Gen Failed:', e);
+                    // ★★★ 关键修改：生成失败时的提示 ★★★
+                    content = content.replace(naiMatch[0], '<p style="color:#999; font-size:12px; text-align:center;">(照片好像没夹稳，掉落了...)</p>');
+                    // 弹出Toast提醒用户
+                    showToast('日记配图生成失败，请检查魔法或NAI设置');
+                }
+            } else {
+                // Remove tag if NAI disabled
+                content = content.replace(/\[NAI:.*?\]/, '');
+            }
+        }
+
+        return content;
+    }
+
+    // --- 图片拼贴编辑逻辑 (Collage Logic V2) ---
+    const imageToolbar = document.getElementById('diary-image-toolbar');
+    const sizeSlider = document.getElementById('img-size-slider');
+    const rotateSlider = document.getElementById('img-rotate-slider');
+    const xSlider = document.getElementById('img-x-slider'); // 新增
+    const ySlider = document.getElementById('img-y-slider'); // 新增
+    const zSlider = document.getElementById('img-z-slider'); // 新增
+    const imgDeleteBtn = document.getElementById('img-delete-btn');
+    const diaryBottomActions = document.querySelector('.diary-bottom-actions');
+    const styleBtns = document.querySelectorAll('.style-btn');
+
+    let selectedDiaryImage = null;
+
+    // 1. 监听编辑器点击
+    contentEditor.addEventListener('click', (e) => {
+        if (e.target.tagName === 'IMG') {
+            e.stopPropagation();
+            selectImage(e.target);
+        } else {
+            deselectImage();
+        }
+    });
+
+    // 2. 选中图片
+    function selectImage(img) {
+        if (selectedDiaryImage) selectedDiaryImage.classList.remove('img-selected');
+        selectedDiaryImage = img;
+        selectedDiaryImage.classList.add('img-selected');
+
+        // --- 回显数据 ---
+        // 大小
+        let currentWidth = selectedDiaryImage.style.maxWidth || '90%';
+        sizeSlider.value = parseInt(currentWidth);
+
+        // 变换 (Transform): 解析 rotate, translateX, translateY
+        // 格式可能是: "rotate(5deg) translate(10px, 20px)"
+        const transform = selectedDiaryImage.style.transform || '';
+
+        // 解析旋转
+        const rotateMatch = transform.match(/rotate\(([-\d.]+)deg\)/);
+        rotateSlider.value = rotateMatch ? parseFloat(rotateMatch[1]) : 0;
+
+        // 解析位移
+        const translateMatch = transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+        if (translateMatch) {
+            xSlider.value = parseFloat(translateMatch[1]);
+            ySlider.value = parseFloat(translateMatch[2]);
+        } else {
+            xSlider.value = 0;
+            ySlider.value = 0;
+        }
+
+        // 解析层级 (Z-index)
+        // 默认zIndex为空，设为1
+        zSlider.value = selectedDiaryImage.style.zIndex || 1;
+
+        updateActiveStyleBtn();
+
+        if(diaryBottomActions) diaryBottomActions.style.display = 'none';
+        imageToolbar.style.display = 'flex';
+    }
+
+    // 3. 取消选中
+    function deselectImage() {
+        if (selectedDiaryImage) {
+            selectedDiaryImage.classList.remove('img-selected');
+            selectedDiaryImage = null;
+        }
+        imageToolbar.style.display = 'none';
+        if (currentEditingDiaryId && diaryBottomActions) {
+            diaryBottomActions.style.display = 'block';
+        }
+    }
+
+    // 4. 统一更新 Transform 的函数
+    function updateImageTransform() {
+        if (!selectedDiaryImage) return;
+        const r = rotateSlider.value;
+        const x = xSlider.value;
+        const y = ySlider.value;
+        // 组合变换字符串
+        selectedDiaryImage.style.transform = `rotate(${r}deg) translate(${x}px, ${y}px)`;
+    }
+
+    // 5. 绑定滑块事件
+    sizeSlider.addEventListener('input', (e) => {
+        if (selectedDiaryImage) selectedDiaryImage.style.maxWidth = e.target.value + '%';
+    });
+
+    rotateSlider.addEventListener('input', updateImageTransform);
+    xSlider.addEventListener('input', updateImageTransform);
+    ySlider.addEventListener('input', updateImageTransform);
+
+    // 层级控制
+    zSlider.addEventListener('input', (e) => {
+        if (selectedDiaryImage) {
+            // 注意：要让z-index生效，position必须是relative/absolute (已在CSS中设为relative)
+            selectedDiaryImage.style.zIndex = e.target.value;
+        }
+    });
+
+    // 6. 风格切换
+    styleBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (!selectedDiaryImage) return;
+            const newStyle = e.currentTarget.dataset.style;
+            const styleClassName = `img-style-${newStyle}`;
+
+            // 移除旧的所有 img-style- 开头的类
+            selectedDiaryImage.className = selectedDiaryImage.className.replace(/\bimg-style-\S+/g, '');
+            // 添加新类
+            selectedDiaryImage.classList.add(styleClassName);
+            // 补回选中状态
+            selectedDiaryImage.classList.add('img-selected');
+
+            updateActiveStyleBtn();
+        });
+    });
+
+    function updateActiveStyleBtn() {
+        if (!selectedDiaryImage) return;
+        styleBtns.forEach(btn => {
+            btn.classList.remove('active');
+            const styleName = btn.dataset.style;
+            if (selectedDiaryImage.classList.contains(`img-style-${styleName}`)) {
+                btn.classList.add('active');
+            }
+        });
+    }
+
+    // 7. 删除
+    imgDeleteBtn.addEventListener('click', () => {
+        if (selectedDiaryImage) {
+            selectedDiaryImage.remove();
+            deselectImage();
+        }
+    });
+
+    // Handle Todo List Clicks (Event Delegation)
+    document.body.addEventListener('click', (e) => {
+        if (e.target.classList.contains('diary-todo-item')) {
+            e.target.classList.toggle('checked');
+        }
+    });
+
+    // 火漆印章功能
+    const waxSealBtn = document.getElementById('waxSealBtn');
+
+    if (waxSealBtn) {
+        waxSealBtn.addEventListener('click', async function() {
+            // 添加点击动画
+            this.classList.add('seal-pressed');
+
+            // 创建火漆盖章效果
+            const paperContainer = document.querySelector('.diary-paper-container');
+            const sealEffect = document.createElement('div');
+            sealEffect.className = 'seal-effect';
+            sealEffect.innerHTML = `
+                <div class="wax-drop"></div>
+                <div class="seal-mark"></div>
+            `;
+
+            // 将盖章效果添加到纸张容器
+            paperContainer.appendChild(sealEffect);
+
+            // 播放盖章动画
+            setTimeout(() => {
+                sealEffect.classList.add('seal-impression');
+            }, 100);
+
+            // 添加震动反馈
+            if (navigator.vibrate) {
+                navigator.vibrate(200);
+            }
+
+            // 播放音效
+            playSealSound();
+
+            // 触发保存按钮点击
+            setTimeout(() => {
+                const saveBtn = document.getElementById('save-btn');
+                if (saveBtn) {
+                    saveBtn.click();
+                }
+                showNotification('日记已用火漆印章密封！', 'success');
+                // 移除盖章效果
+                setTimeout(() => {
+                    sealEffect.remove();
+                }, 2000);
+            }, 800);
+
+            // 移除按钮按下状态
+            setTimeout(() => {
+                this.classList.remove('seal-pressed');
+            }, 600);
+        });
+    }
+
+    // 播放印章音效
+    function playSealSound() {
+        try {
+            // 使用Web Audio API创建印章音效
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        } catch (error) {
+            console.log('音效播放失败:', error);
+        }
+    }
+
+} // 🟢 结束 setupDiaryApp 函数
+
+}); // 🟢 结束 document.addEventListener('DOMContentLoaded' ...
 

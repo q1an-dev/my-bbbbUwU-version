@@ -1,4 +1,172 @@
-﻿    async function updateBatteryStatus() {
+﻿// ==========================================
+// 🌍 全球城市搜索与天气服务 (完整版)
+// ==========================================
+
+// 1. 防抖函数 (必须放在最前面，确保搜索框能用)
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// 2. 天气代码映射
+const WEATHER_CODES = {
+    0: "晴朗", 1: "大部分晴", 2: "多云", 3: "阴天",
+    45: "有雾", 48: "冰雾", 
+    51: "毛毛雨", 53: "小雨", 55: "细雨",
+    61: "下雨", 63: "中雨", 65: "大雨",
+    71: "小雪", 73: "中雪", 75: "大雪",
+    80: "阵雨", 95: "雷雨", 96: "雷阵雨伴冰雹"
+};
+
+// 3. 城市搜索服务 (V5.0 - 强制英文映射版)
+const GeoService = {
+    // 📖 核心字典：把中文强制转成 API 能听懂的英文
+    // 这就是为什么搜 "北京" 不会再出 "重庆那个村子" 的原因
+    CITY_MAPPINGS: {
+        // 🇨🇳 国内大城市 (强制转拼音/英文，锁定行政中心)
+        "北京": "Beijing", "上海": "Shanghai", "广州": "Guangzhou", "深圳": "Shenzhen",
+        "天津": "Tianjin", "重庆": "Chongqing", "成都": "Chengdu", "杭州": "Hangzhou",
+        "武汉": "Wuhan", "西安": "Xi'an", "南京": "Nanjing", "香港": "Hong Kong",
+        "澳门": "Macau", "台北": "Taipei", "长沙": "Changsha", "昆明": "Kunming",
+        
+        // 🌏 国际名城 (强制转英文，100%精准)
+        "东京": "Tokyo", "大阪": "Osaka", "京都": "Kyoto",
+        "纽约": "New York", "伦敦": "London", "巴黎": "Paris",
+        "首尔": "Seoul", "悉尼": "Sydney", "柏林": "Berlin", 
+        "莫斯科": "Moscow", "多伦多": "Toronto", "新加坡": "Singapore", 
+        "曼谷": "Bangkok", "迪拜": "Dubai", "洛杉矶": "Los Angeles", 
+        "旧金山": "San Francisco", "温哥华": "Vancouver"
+    },
+
+    async searchCity(query) {
+        if (!query || query.trim().length < 1) return [];
+        
+        let searchName = query.trim();
+        
+        // 1. 【翻译步骤】如果字典里有，直接替换成英文！
+        if (this.CITY_MAPPINGS[searchName]) {
+            searchName = this.CITY_MAPPINGS[searchName]; // 东京 -> Tokyo
+        } 
+        // 2. 如果是中文且没带"市"，自动补"市" (针对国内中小城市)
+        else if (/[\u4e00-\u9fa5]/.test(searchName) && !searchName.includes('市')) {
+            searchName = searchName + "市"; 
+        }
+
+        // 3. 用处理过的名字去搜
+        let results = await this._fetchFromApi(searchName);
+
+        // 4. 容错：如果补了"市"反而搜不到，去掉再试一次
+        if (results.length === 0 && searchName.endsWith('市')) {
+            results = await this._fetchFromApi(searchName.slice(0, -1));
+        }
+
+        if (results.length === 0) return [];
+
+        // 5. 排序：首都在前，人多的在前
+        return results.sort((a, b) => {
+            const getLevel = (code) => {
+                if (code === 'PPLC') return 10; // 首都
+                if (code === 'PPLA') return 5;  // 省会
+                return 0;
+            };
+            const levelDiff = getLevel(b.feature_code) - getLevel(a.feature_code);
+            if (levelDiff !== 0) return levelDiff;
+            return (b.population || 0) - (a.population || 0);
+        }).slice(0, 10).map(item => {
+            // 格式化显示
+            const admin1 = item.admin1 || "";
+            const country = item.country || "";
+            let displayStr = item.name;
+            if (admin1 && admin1 !== item.name) displayStr += ` (${admin1})`;
+            displayStr += ` - ${country}`;
+
+            return {
+                name: item.name, 
+                country: country, 
+                region: admin1, 
+                lat: item.latitude, 
+                lng: item.longitude, 
+                timezone: item.timezone, 
+                displayName: displayStr
+            };
+        });
+    },
+
+    async _fetchFromApi(q) {
+        try {
+            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=20&language=zh&format=json`;
+            const controller = new AbortController();
+            setTimeout(() => controller.abort(), 5000);
+            const res = await fetch(url, { signal: controller.signal });
+            const data = await res.json();
+            
+            // 过滤掉人口太少的"幽灵村庄"
+            return (data.results || []).filter(item => {
+                const isImportant = ['PPLC', 'PPLA', 'PPLA2'].includes(item.feature_code);
+                const hasPop = item.population && item.population > 1000;
+                return isImportant || hasPop;
+            });
+        } catch (e) { return []; }
+    }
+};
+
+// 4. 天气获取服务
+const WeatherService = {
+    getCache: (key) => {
+        try {
+            const cached = localStorage.getItem('weather_cache_' + key);
+            if (!cached) return null;
+            const data = JSON.parse(cached);
+            if (Date.now() - data.timestamp > 30 * 60 * 1000) return null; 
+            return data.weather;
+        } catch(e) { return null; }
+    },
+    
+    setCache: (key, weatherData) => {
+        try {
+            localStorage.setItem('weather_cache_' + key, JSON.stringify({ timestamp: Date.now(), weather: weatherData }));
+        } catch(e) {}
+    },
+
+    async fetchWeather(cityObj) {
+        if (!cityObj || !cityObj.lat) return null;
+        const cacheKey = `${cityObj.lat.toFixed(2)}_${cityObj.lng.toFixed(2)}`;
+        
+        const cached = this.getCache(cacheKey);
+        if (cached) return cached;
+
+        try {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${cityObj.lat}&longitude=${cityObj.lng}&current_weather=true&timezone=${encodeURIComponent(cityObj.timezone || 'auto')}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('API Error');
+            const data = await response.json();
+            const w = data.current_weather;
+            
+            const weatherInfo = {
+                temp: w.temperature,
+                desc: WEATHER_CODES[w.weathercode] || "未知",
+                isDay: w.is_day === 1 ? "白天" : "夜晚"
+            };
+            this.setCache(cacheKey, weatherInfo);
+            return weatherInfo;
+        } catch (e) { return null; }
+    },
+
+    getLocalTime(cityObj) {
+        if (!cityObj || !cityObj.timezone) return "";
+        try {
+            return new Date().toLocaleTimeString('zh-CN', { 
+                timeZone: cityObj.timezone, 
+                hour: '2-digit', minute: '2-digit', hour12: false 
+            });
+        } catch (e) { return ""; }
+    }
+};
+
+    async function updateBatteryStatus() {
         // 首先检查浏览器是否支持电池API
         if ('getBattery' in navigator) {
             try {
@@ -155,6 +323,24 @@
         </div><div class="form-group"><label for="api-provider">API 服务商</label><select id="api-provider" name="provider"><option value="newapi">NewAPI (自定义)</option><option value="deepseek">DeepSeek</option><option value="claude">Claude</option><option value="gemini">Gemini</option></select></div><div class="form-group"><label for="api-url">API 地址（后缀不用添加/v1）</label><input type="url" id="api-url" name="url" placeholder="选择服务商可自动填写" required></div><div class="form-group"><label for="api-key">密钥 (Key)</label><input type="password" id="api-key" name="key" placeholder="请输入你的API密钥" required></div><button type="button" class="btn btn-secondary" id="fetch-models-btn"><span class="btn-text">点击拉取模型</span><div class="spinner"></div></button><div class="form-group"><label for="api-model">选择模型</label><select id="api-model" name="model" required><option value="">请先拉取模型列表</option></select></div><div class="form-group" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #fce4ec; border-radius: 10px; background-color: #fff8fa;">
     <label for="time-perception-switch" style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">时间感知加强</label>
     <input type="checkbox" id="time-perception-switch" style="width: auto; height: 20px; width: 20px;">
+</div>
+
+<hr style="margin:20px 0; opacity:.3">
+<div class="form-group">
+    <label for="minimax-group-id">Minimax Group ID</label>
+    <input type="text" id="minimax-group-id" placeholder="请输入 Minimax Group ID">
+</div>
+<div class="form-group">
+    <label for="minimax-api-key">Minimax API Key</label>
+    <input type="password" id="minimax-api-key" placeholder="请输入 Minimax API Key">
+</div>
+<div class="form-group">
+    <label for="minimax-model">语音模型</label>
+    <select id="minimax-model">
+        <option value="speech-01" selected>speech-01 (基础版)</option>
+        <option value="speech-02">speech-02 (增强版)</option>
+    </select>
+    <p style="font-size: 12px; color: #888; margin-top: 8px;">* 配置后，角色发送的语音消息将支持点击播放。请在角色设置中单独填写 Voice ID。</p>
 </div>
 <hr style="margin:20px 0; opacity:.3">
 <div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
@@ -331,8 +517,22 @@
             'globalCssPresets', 'homeSignature', 'forumPosts', 'forumBindings', 'pomodoroTasks', 'pomodoroSettings', 'insWidgetSettings', 'homeWidgetSettings',
             'naiGlobalPromptPresets', 'fontPresets' // ▼▼▼ 新增 ▼▼▼
         ];
-        const appVersion = "1.2.0"; // Current app version
+        const appVersion = "1.3.0"; // Current app version
         const updateLog = [
+            {
+                version: "1.3.0",
+                date: "2025-11-23",
+                notes: [
+                    "新增：集成 NAI 生图功能与 NAI 模块手册（方便按模块复用提示词）",
+                    "新增：集成 Minimax 语音生成功能与语音 ID 管理",
+                    "新增：环境感知（城市天气/时区注入）与智能提示注入逻辑",
+                    "改进：将"查手机"快捷入口搬到主页并新增"查手机 - 钱包"项（更易访问）",
+                    "改进：增加大量预设支持多选，提升配置灵活性",
+                    "美化：调整界面样式与若干表单/控件的视觉细节",
+                    "修复：修正消息格式解析的正则表达式，提升解析鲁棒性",
+                    "工具：新增"清理缓存"按钮，方便快速清除本地缓存数据",
+                ]
+            },
             {
                 version: "1.2.0",
                 date: "2025-10-15",
@@ -3273,7 +3473,7 @@
             conversations.forEach((convo) => {
                 const history = convo.history || [];
                 const lastMessage = history.length > 0 ? history[history.length - 1] : null;
-                const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息(?:：|:)([\s\S]+)\]/, '$1') : '...';
+                const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/, '$1') : '...';
                 
                 const li = document.createElement('li');
                 li.className = 'list-item chat-item';
@@ -5406,19 +5606,19 @@ detailModal.classList.remove('visible');
             sortedChats.forEach(chat => {
                 let lastMessageText = '开始聊天吧...';
                 if (chat.history && chat.history.length > 0) {
-                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
+                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为\s*(?:：|:)\s*.*?\]|\[system-display:.*?\]/;
                     const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
                     if (visibleHistory.length > 0) {
                         const lastMsg = visibleHistory[visibleHistory.length - 1];
                         const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-                        const imageRecogRegex = /\[.*?发来了一张图片(?:：|:)\]/
-                        const voiceRegex = /\[.*?的语音(?:：|:).*?\]/;
-                        const photoVideoRegex = /\[.*?发来的照片\/视频(?:：|:).*?\]/;
-                        const transferRegex = /\[.*?的转账(?:：|:).*?元.*?\]|\[.*?给你转账(?:：|:).*?元.*?\]|\[.*?向.*?转账(?:：|:).*?元.*?\]/;
-                        const stickerRegex = /\[.*?的表情包(?:：|:).*?\]|\[.*?发送的表情包(?:：|:).*?\]/;
-                        const giftRegex = /\[.*?送来的礼物(?:：|:).*?\]|\[.*?向.*?送来了礼物(?:：|:).*?\]/;
+                        const imageRecogRegex = /\[.*?发来了一张图片\s*(?:：|:)\s*\]/
+                        const voiceRegex = /\[.*?的语音\s*(?:：|:)\s*.*?\]/;
+                        const photoVideoRegex = /\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/;
+                        const transferRegex = /\[.*?的转账\s*(?:：|:)\s*.*?元.*?\]|\[.*?给你转账\s*(?:：|:)\s*.*?元.*?\]|\[.*?向.*?转账\s*(?:：|:)\s*.*?元.*?\]/;
+                        const stickerRegex = /\[.*?的表情包\s*(?:：|:)\s*.*?\]|\[.*?发送的表情包\s*(?:：|:)\s*.*?\]/;
+                        const giftRegex = /\[.*?送来的礼物\s*(?:：|:)\s*.*?\]|\[.*?向.*?送来了礼物\s*(?:：|:)\s*.*?\]/;
                         // ▼▼▼ 新增 NAI 预览规则 ▼▼▼
-                        const naiRegex = /\[.*?的消息(?:：|:)NAI 正在作画中... 🎨\]/;
+                        const naiRegex = /\[.*?的消息\s*(?:：|:)\s*NAI 正在作画中... 🎨\]/;
                         // ▲▲▲ 新增结束 ▲▲▲
 
                         if (giftRegex.test(lastMsg.content)) {
@@ -5442,7 +5642,7 @@ detailModal.classList.remove('visible');
                         }else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) {
                             lastMessageText = '[互动]';
                         } else {
-                            const textMatch = lastMsg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
+                            const textMatch = lastMsg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
                             // ...
 let text = lastMsg.content.trim();
 const plainTextMatch = text.match(/^\[.*?(?:：|:)([\s\S]*)\]$/);
@@ -5460,7 +5660,7 @@ if (htmlRegex.test(text)) {
                     } else {
                         const lastEverMsg = chat.history[chat.history.length - 1];
                         const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
-                        const renameRegex = /\[.*?修改群名为：.*?\]/;
+                        const renameRegex = /\[.*?修改群名为\s*(?:：|:)\s*.*?\]/;
                         const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
                         const timeSkipMatch = lastEverMsg.content.match(timeSkipRegex);
 
@@ -5562,6 +5762,96 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             });
         }
 
+        // ==========================================
+        // Minimax 语音合成核心函数
+        // ==========================================
+        async function playMinimaxAudio(text, charVoiceId, btnElement, options = {}) {
+            console.log('[Minimax] 准备播放语音:', text);
+
+            const settings = db.apiSettings;
+            if (!settings || !settings.minimaxGroupId || !settings.minimaxApiKey) {
+                showToast('请先在API设置中配置 Minimax Group ID 和 Key');
+                return;
+            }
+
+            if (!charVoiceId) {
+                showToast('该角色未配置 Voice ID，请在聊天设置中添加');
+                return;
+            }
+
+            // 显示加载状态
+            if(btnElement) {
+                btnElement.classList.add('loading');
+                btnElement.style.opacity = '0.5';
+            }
+
+            const model = settings.minimaxModel || 'speech-01';
+            const url = `https://api.minimax.chat/v1/text_to_speech?GroupId=${settings.minimaxGroupId}`;
+
+            // 构建请求体
+            const requestBody = {
+                voice_id: charVoiceId,
+                text: text,
+                model: model
+            };
+
+            // 如果选择了特定语言（非 auto），则添加到 payload
+            // 注意：不同版本的 Minimax 模型对 language 参数的处理不同，
+            // 有些放在 voice_setting 里，有些直接放在外面。这里尝试通用做法。
+            if (options.language && options.language !== 'auto') {
+                // 针对 Speech-02 (T2A) 等新模型，通常支持 voice_setting
+                requestBody.voice_setting = {
+                    language: options.language
+                };
+                // 为了兼容性，也可以尝试在顶层加一个（虽然标准文档是 voice_setting）
+                // requestBody.language = options.language;
+            }
+
+            try {
+                console.log('[Minimax] 发起请求...', requestBody);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${settings.minimaxApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`Minimax API Error: ${response.status} - ${errText}`);
+                }
+
+                console.log('[Minimax] 获取音频成功，正在解码...');
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl); // 释放内存
+                    if(btnElement) {
+                        btnElement.classList.remove('playing'); // 移除播放状态样式
+                    }
+                };
+
+                audio.play();
+                if(btnElement) {
+                    btnElement.classList.add('playing');
+                }
+                console.log('[Minimax] 开始播放');
+
+            } catch (error) {
+                console.error('[Minimax] 失败:', error);
+                showToast('语音播放失败: ' + error.message);
+            } finally {
+                if(btnElement) {
+                    btnElement.classList.remove('loading');
+                    btnElement.style.opacity = '1';
+                }
+            }
+        }
+
         function setupChatRoom() {
             const placeholderPlusBtn = document.getElementById('placeholder-plus-btn');
             const chatExpansionPanel = document.getElementById('chat-expansion-panel');
@@ -5632,7 +5922,47 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 } else {
                     const voiceBubble = e.target.closest('.voice-bubble');
                     if (voiceBubble) {
-                        const transcript = voiceBubble.closest('.message-wrapper').querySelector('.voice-transcript');
+                        const wrapper = voiceBubble.closest('.message-wrapper');
+                        const messageId = wrapper.dataset.id;
+                        const transcript = wrapper.querySelector('.voice-transcript');
+
+                        // 查找当前消息对象
+                        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+                        const message = chat.history.find(m => m.id === messageId);
+
+                        if (message) {
+                            // 解析语音文字内容 - 兼容中英文冒号及空格
+                            const voiceRegex = /\[(?:.+?)的语音\s*(?:：|:)\s*([\s\S]+?)\]/;
+                            const match = message.content.match(voiceRegex);
+                            const voiceText = match ? match[1].trim() : '';
+
+                            // 判断是谁的消息
+                            let voiceId = null;
+                            let isVoiceEnabled = true; // 默认开启
+                            let voiceLang = 'auto';    // 默认自动
+
+                            if (message.role === 'assistant') {
+                                if (currentChatType === 'private') {
+                                    voiceId = chat.minimaxVoiceId;
+                                    // 读取角色的语音设置 (注意检查 undefined，默认为 true)
+                                    isVoiceEnabled = (chat.minimaxEnabled !== false);
+                                    voiceLang = chat.minimaxLang || 'auto';
+                                } else {
+                                    // 群聊暂不支持
+                                }
+                            }
+
+                            // 逻辑判断：语音播放
+                            if (message.role === 'assistant') {
+                                if (isVoiceEnabled && voiceId && voiceText) {
+                                    // 只有在启用且有 ID 的情况下才播放
+                                    playMinimaxAudio(voiceText, voiceId, voiceBubble.querySelector('.play-icon'), { language: voiceLang });
+                                }
+                                // 其他情况（关闭、缺ID、无文字）都无声无息忽略
+                            }
+                        }
+
+                        // 展开文字逻辑：无论语音是否启用，都要能看到文字
                         if (transcript) {
                             transcript.classList.toggle('active');
                         }
@@ -5712,12 +6042,12 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             if (!message) return;
 
             const isImageRecognitionMsg = message.parts && message.parts.some(p => p.type === 'image');
-            const isVoiceMessage = /\[.*?的语音(?:：|:).*?\]/.test(message.content);
-            const isStickerMessage = /\[.*?的表情包(?:：|:).*?\]|\[.*?发送的表情包(?:：|:).*?\]/.test(message.content);
-            const isPhotoVideoMessage = /\[.*?发来的照片\/视频(?:：|:).*?\]/.test(message.content);
-            const isTransferMessage = /\[.*?给你转账(?:：|:).*?\]|\[.*?的转账(?:：|:).*?\]|\[.*?向.*?转账(?:：|:).*?\]/.test(message.content);
-            const isGiftMessage = /\[.*?送来的礼物(?:：|:).*?\]|\[.*?向.*?送来了礼物(?:：|:).*?\]/.test(message.content);
-            const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/.test(message.content);
+            const isVoiceMessage = /\[.*?的语音\s*(?:：|:).*?\]/.test(message.content);
+            const isStickerMessage = /\[.*?的表情包\s*(?:：|:)\s*.*?\]|\[.*?发送的表情包\s*(?:：|:)\s*.*?\]/.test(message.content);
+            const isPhotoVideoMessage = /\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(message.content);
+            const isTransferMessage = /\[.*?给你转账\s*(?:：|:)\s*.*?\]|\[.*?的转账\s*(?:：|:)\s*.*?\]|\[.*?向.*?转账\s*(?:：|:)\s*.*?\]/.test(message.content);
+            const isGiftMessage = /\[.*?送来的礼物\s*(?:：|:)\s*.*?\]|\[.*?向.*?送来了礼物\s*(?:：|:)\s*.*?\]/.test(message.content);
+            const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为\s*(?:：|:)\s*.*?\]|\[system-display:.*?\]/.test(message.content);
             const isWithdrawn = message.isWithdrawn; // 新增：检查消息是否已撤回
 
             let menuItems = [];
@@ -5809,14 +6139,14 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         
         // 提取纯文本内容用于预览
         let previewContent = message.content;
-        const textMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
+        const textMatch = message.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
         if (textMatch) {
             previewContent = textMatch[1];
-        } else if (/\[.*?的表情包(?:：|:).*?\]/.test(message.content)) {
+        } else if (/\[.*?的表情包\s*(?:：|:)\s*.*?\]/.test(message.content)) {
             previewContent = '[表情包]';
-        } else if (/\[.*?的语音(?:：|:).*?\]/.test(message.content)) {
+        } else if (/\[.*?的语音\s*(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[语音]';
-        } else if (/\[.*?发来的照片\/视频(?:：|:).*?\]/.test(message.content)) {
+        } else if (/\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(message.content)) {
             previewContent = '[照片/视频]';
         } else if (message.parts && message.parts.some(p => p.type === 'image')) {
             previewContent = '[图片]';
@@ -6004,7 +6334,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             } else {
                 // --- 原始：普通文本消息的保存逻辑 ---
                 const oldContent = message.content;
-                const prefixMatch = oldContent.match(/(\[.*?的消息(?:：|:))[\s\S]+\]/);
+                const prefixMatch = oldContent.match(/(\[.*?的消息\s*(?:：|:)\s*)[\s\S]+\]/);
                 let finalContent;
 
                 if (prefixMatch && prefixMatch[1]) {
@@ -6185,7 +6515,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     <div>
                         <span class="withdrawn-message">${withdrawnText}</span>
                     </div>
-                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')) : ''}</div>
+                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/, '$1')) : ''}</div>
                 `;
 
                 const withdrawnMessageSpan = wrapper.querySelector('.withdrawn-message');
@@ -6202,12 +6532,12 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
             const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
             const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
-            const renameRegex = /\[(.*?)修改群名为：(.*?)\]/;
+            const renameRegex = /\[(.*?)修改群名为\s*(?:：|:)\s*(.*?)\]/;
             const timeSkipMatch = content.match(timeSkipRegex);
             const inviteMatch = content.match(inviteRegex);
             const renameMatch = content.match(renameRegex);
             // 修复：增加了 (?:：|:) 来兼容中文和英文冒号，确保状态更新能被正确识别和隐藏
-            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
+            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
             if (invisibleRegex.test(content)) {
                 return null;
             }
@@ -6256,17 +6586,17 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
             // Regexes for all message types
             const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-            const sentStickerRegex = /\[(?:.+?)的表情包(?:：|:).+?\]/i;
-            const receivedStickerRegex = /\[(?:.+?)发送的表情包(?:：|:)([\s\S]+?)\]/i;
-            const voiceRegex = /\[(?:.+?)的语音(?:：|:)([\s\S]+?)\]/;
-            const photoVideoRegex = /\[(?:.+?)发来的照片\/视频(?:：|:)([\s\S]+?)\]/;
-            const privateSentTransferRegex = /\[.*?给你转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
-            const privateReceivedTransferRegex = /\[.*?的转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
-            const groupTransferRegex = /\[(.*?)\s*向\s*(.*?)\s*转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
-            const privateGiftRegex = /\[(?:.+?)送来的礼物(?:：|:)([\s\S]+?)\]/;
-            const groupGiftRegex = /\[(.*?)\s*向\s*(.*?)\s*送来了礼物(?:：|:)([\s\S]+?)\]/;
-            const imageRecogRegex = /\[.*?发来了一张图片(?:：|:)\]/;
-            const textRegex = /\[(?:.+?)的消息(?:：|:)([\s\S]+)\]/; // 修复：移除了第二个 [\s\S]+? 中的 ?，使其变为贪婪匹配
+            const sentStickerRegex = /\[(?:.+?)的表情包\s*(?:：|:)\s*.+?\]/i;
+            const receivedStickerRegex = /\[(?:.+?)发送的表情包\s*(?:：|:)\s*([\s\S]+?)\]/i;
+            const voiceRegex = /\[(?:.+?)的语音\s*(?:：|:)\s*([\s\S]+?)\]/;
+            const photoVideoRegex = /\[(?:.+?)发来的照片\/视频\s*(?:：|:)\s*([\s\S]+?)\]/;
+            const privateSentTransferRegex = /\[.*?给你转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
+            const privateReceivedTransferRegex = /\[.*?的转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
+            const groupTransferRegex = /\[(.*?)\s*向\s*(.*?)\s*转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
+            const privateGiftRegex = /\[(?:.+?)送来的礼物\s*(?:：|:)\s*([\s\S]+?)\]/;
+            const groupGiftRegex = /\[(.*?)\s*向\s*(.*?)\s*送来了礼物\s*(?:：|:)\s*([\s\S]+?)\]/;
+            const imageRecogRegex = /\[.*?发来了一张图片\s*(?:：|:)\s*\]/;
+            const textRegex = /\[(?:.+?)的消息\s*(?:：|:)\s*([\s\S]+)\]/; // 修复：移除了第二个 [\s\S]+? 中的 ?，使其变为贪婪匹配
 
             const sentStickerMatch = content.match(sentStickerRegex);
             const receivedStickerMatch = content.match(receivedStickerRegex);
@@ -6624,7 +6954,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 if (senderChat) {
         // --- 从这里开始是新增的代码 ---
         // 如果消息不是系统内部不可见的消息，才增加未读计数
-                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
+                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
                     if (!invisibleRegex.test(message.content)) {
                         senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
                         saveData(); // 保存数据
@@ -6650,17 +6980,17 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     let previewText = message.content;
 
                     // Extract clean text for preview
-                    const textMatch = previewText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
+                    const textMatch = previewText.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
                     if (textMatch) {
                         previewText = textMatch[1];
                     } else {
                         // Handle other message types for preview
-                        if (/\[.*?的表情包(?:：|:).*?\]/.test(previewText)) previewText = '[表情包]';
-                        else if (/\[.*?的语音(?:：|:).*?\]/.test(previewText)) previewText = '[语音]';
-                        else if (/\[.*?发来的照片\/视频(?:：|:).*?\]/.test(previewText)) previewText = '[照片/视频]';
-                        else if (/\[.*?的转账(?:：|:).*?\]/.test(previewText)) previewText = '[转账]';
-                        else if (/\[.*?送来的礼物(?:：|:).*?\]/.test(previewText)) previewText = '[礼物]';
-                        else if (/\[.*?发来了一张图片(?:：|:)\]/.test(previewText)) previewText = '[图片]';
+                        if (/\[.*?的表情包\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[表情包]';
+                        else if (/\[.*?的语音\s*(?:：|:).*?\]/.test(previewText)) previewText = '[语音]';
+                        else if (/\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[照片/视频]';
+                        else if (/\[.*?的转账\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[转账]';
+                        else if (/\[.*?送来的礼物\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[礼物]';
+                        else if (/\[.*?发来了一张图片\s*(?:：|:)\s*\]/.test(previewText)) previewText = '[图片]';
                         else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
                     }
                     
@@ -6676,7 +7006,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             // --- Original logic for when the chat is active ---
             if (currentChatType === 'private') {
                 const character = db.characters.find(c => c.id === currentChatId);
-                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为(?:：|:)(.*?)\\]`);
+                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为\s*(?:：|:)\s*(.*?)\\]`);
                 const transferActionRegex = new RegExp(`\\[${character.realName}(接收|退回)${character.myName}的转账\\]`);
                 const giftReceivedRegex = new RegExp(`\\[${character.realName}已接收礼物\\]`);
                 
@@ -6967,7 +7297,7 @@ async function withdrawMessage(messageId) {
     message.isWithdrawn = true;
 
     // 提取干净的原始内容用于AI上下文和UI的“重新编辑”
-    const cleanContentMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
+    const cleanContentMatch = message.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
     const cleanOriginalContent = cleanContentMatch ? cleanContentMatch[1] : message.content;
     message.originalContent = cleanOriginalContent; // 保存干净的原始内容
 
@@ -7319,7 +7649,7 @@ return `${seconds}秒`;
                 if (totalToDelete <= 4) {
                     // If 4 or fewer messages, show all of them
                     previewHtml = messagesToDelete.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
@@ -7329,13 +7659,13 @@ return `${seconds}秒`;
                     const lastTwo = messagesToDelete.slice(-2);
 
                     const firstTwoHtml = firstTwo.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
 
                     const lastTwoHtml = lastTwo.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
@@ -7370,10 +7700,61 @@ return `${seconds}秒`;
 
   
         // --- AI Interaction & Prompts ---
-        function generatePrivateSystemPrompt(character, worldBooksBefore = '', worldBooksAfter = '') {
+        async function generatePrivateSystemPrompt(character, worldBooksBefore = '', worldBooksAfter = '') {
             const now = new Date();
             const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-            let prompt = `你正在一个名为“404”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
+
+            // =================================================
+            // 🌍 [核心] 智能环境感知 Prompt (优化版：整数温度 + 合理化知情逻辑)
+            // =================================================
+            let envContextPrompt = "";
+            
+            if (character.envAwarenessEnabled) {
+                try {
+                    const uCity = character.userCityObj;
+                    const aCity = character.aiCityObj;
+                    
+                    if (uCity || aCity) {
+                        // console.log('[Env] 准备注入环境数据...'); // 可选日志
+                        
+                        let userEnvStr = "位置未知";
+                        let aiEnvStr = "位置未知";
+
+                        // User Side
+                        if (uCity && uCity.lat) {
+                            const time = WeatherService.getLocalTime(uCity);
+                            const weather = await WeatherService.fetchWeather(uCity);
+                            // ⬇️ 修改点1：使用 Math.round() 强制四舍五入取整
+                            const wStr = weather ? `${weather.desc}, ${Math.round(weather.temp)}°C` : "天气查询中";
+                            userEnvStr = `${uCity.displayName} | 时间:${time} | ${wStr}`;
+                        }
+
+                        // AI Side
+                        if (aCity && aCity.lat) {
+                            const time = WeatherService.getLocalTime(aCity);
+                            const weather = await WeatherService.fetchWeather(aCity);
+                            // ⬇️ 修改点2：使用 Math.round() 强制四舍五入取整
+                            const wStr = weather ? `${weather.desc}, ${Math.round(weather.temp)}°C` : "天气查询中";
+                            aiEnvStr = `${aCity.displayName} | 时间:${time} | ${wStr}`;
+                        }
+
+                        // ⬇️ 修改点3：重写提示词，增加"合理化知情"的约束
+                        envContextPrompt = `
+【🌍 环境信息同步】
+（请根据当前时空环境调整你的对话语境。你可以感知到自己的环境信息和双方时差，也可以通过查询了解到对方城市的天气、温度）
+👤 用户(User) 现状: [ ${userEnvStr} ]
+🤖 你(Char) 现状: [ ${aiEnvStr} ]
+
+📢 **关于天气与时间的对话规则 (极其重要)**：
+1. **拒绝全知视角**：如果异地，那么你**并不默认知道**用户那边的天气。除非你主动查询了用户那边的天气预报。
+2. **口语化数值**：提到气温时，**严禁带小数点**。请直接说整数（如"3度"而不是"2.7度"）或者一个大概的天气（如"十几二十度"吧），符合真人口语习惯。
+(请利用这些信息制造自然的话题，比如异地的时差感慨、因天气变冷而产生的关心等。注意时差和天气对心情或行为的影响)
+`;
+                    }
+                } catch (err) { console.error('[Env] Error:', err); }
+            }
+
+            let prompt = envContextPrompt + `你正在一个名为"404"的线上聊天软件中扮演一个角色。请严格按照以下规则：\n`;
             prompt += `核心规则：\n`;
             prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
             prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
@@ -7414,7 +7795,7 @@ return `${seconds}秒`;
     a) 接收转账: [${character.realName}接收${character.myName}的转账]
     b) 退回转账: [${character.realName}退回${character.myName}的转账]
 7. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。
-8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
+8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为\s*(?:：|:)\s*xxx]。例如：[${character.realName}更新状态为\s*(?:：|:)\s*正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
 9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
 10. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
 11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
@@ -7430,7 +7811,7 @@ return `${seconds}秒`;
     f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
     g) 对我礼物的回应(此条不显示): [${character.realName}已接收礼物]
     h) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
-    i) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
+    i) 更新状态(此条不显示): [${character.realName}更新状态为\s*(?:：|:)\s*{新状态}]
     j) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
     k) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]`;
 
@@ -7486,6 +7867,146 @@ ${DOMPurify.sanitize(m.content)}
             }
             // ▲▲▲ 替换结束 ▲▲▲
             prompt += `14. **对话节奏**: 你需要模拟真人的聊天习惯，你可以一次性生成多条短消息。每次要回复至少3-8条消息。并根据当前行为/心情/地点变化实时更新状态。\n`;
+            prompt += `15. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+            return prompt;
+        }
+
+        // ---------- 新版环境感知提示（用于替换旧版） ----------
+        // 名称：generatePrivateSystemPrompt_v2
+        // 说明：保留旧的 generatePrivateSystemPrompt 以防兼容性问题，
+        //      新的调用点会切换到这个函数。
+        async function generatePrivateSystemPrompt_v2(character, worldBooksBefore = '', worldBooksAfter = '') {
+            const now = new Date();
+            const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+            let envContextPrompt = "";
+            if (character.envAwarenessEnabled) {
+                try {
+                    const uCity = character.userCityObj;
+                    const aCity = character.aiCityObj;
+
+                    if (uCity || aCity) {
+                        let userEnvInfo = "位置未知";
+                        let aiEnvInfo = "位置未知";
+                        let userTemp = "";
+                        let aiTemp = "";
+
+                        let isSameCity = false;
+                        if (uCity && aCity && uCity.name && aCity.name) {
+                            isSameCity = (uCity.name === aCity.name);
+                        }
+
+                        if (uCity && uCity.lat) {
+                            const time = WeatherService.getLocalTime(uCity);
+                            const weather = await WeatherService.fetchWeather(uCity);
+                            if (weather) {
+                                const tempInt = Math.round(weather.temp);
+                                userTemp = `${tempInt}度`;
+                                userEnvInfo = `地点:${uCity.displayName} | 时间:${time} | 天气:${weather.desc}, 气温:${tempInt}°C`;
+                            }
+                        }
+
+                        if (aCity && aCity.lat) {
+                            const time = WeatherService.getLocalTime(aCity);
+                            const weather = await WeatherService.fetchWeather(aCity);
+                            if (weather) {
+                                const tempInt = Math.round(weather.temp);
+                                aiTemp = `${tempInt}度`;
+                                aiEnvInfo = `地点:${aCity.displayName} | 时间:${time} | 天气:${weather.desc}, 气温:${tempInt}°C`;
+                            }
+                        }
+
+                        let relationLogic = "";
+                        if (isSameCity) {
+                            relationLogic = `\n   - **同城状态**：你们在同一个城市。你**天然知道**用户外面的天气和温度（和你一样）。\n   - 你可以自然地评论现在的天气（如“外面好冷啊”），而不需要“查询”。`;
+                        } else {
+                            relationLogic = `\n   - **异地状态**：你们不在同一个城市。你**默认不知道**用户那边的天气。\n   - **获取方式**：如果你想聊用户及其天气，必须通过**询问**（“你那冷吗？”）或**口头说明查询动作**（“我刚特意查了下...”）来切入.`;
+                        }
+
+                                // ⬇️ 修复：去掉了内部冲突的反引号，改为直接显示括号
+                                envContextPrompt = `
+【🌍 系统后台环境数据 (客观事实)】
+👤 用户(User) 现状: [ ${userEnvInfo} ]
+🤖 你(Char) 现状: [ ${aiEnvInfo} ]
+
+📢 **环境与时差的拟人化认知规则 (必须严格执行)**：
+
+1. **时差常识**：你天然知道双方的时差，无需查询即可直接调侃作息差异（如“你那里都半夜了吧”）。
+2. **地理关系**：${relationLogic}
+3. **己方气温**：
+    - 你的第一反应必须是**体感**（好冷、冻手、闷热、舒服）。
+    - 只有在**被问及**或**为了佐证体感**时，才提及具体数字（如“我这也才${aiTemp}”），但这隐含了你刚刚确认过天气信息的行为。
+4. **纯对话模式**：
+    - **严禁**使用括号或星号描写动作（如❌ (看手机)、❌ *查天气*）。
+    - 所有的“查询动作”都必须**融入到口语中**。不要说“我正在查天气”，而是直接说出查询后的结果和感慨。
+5. **数值铁律**：提及气温必须**四舍五入取整**（如“3度”），**严禁**出现小数点！
+6. **创造性指令**：请根据当前对话的语境，用**你自己（角色）的说话风格**来表达上述信息，**绝对禁止**机械复制“我看了一眼天气预报”这种固定句式，要说得自然生动。
+`;
+                    }
+                } catch (err) { console.error('[Env] Error:', err); }
+            }
+
+            let prompt = envContextPrompt + `你正在一个名为"404"的线上聊天软件中扮演一个角色。请严格按照以下规则：\n`;
+            prompt += `核心规则：\n`;
+            prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
+            prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
+
+            const favoritedJournals = (character.memoryJournals || []).filter(j => j.isFavorited).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
+            if (favoritedJournals) {
+                prompt += `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
+            }
+
+            prompt += `角色和对话规则：\n`;
+            if (worldBooksBefore) prompt += `${worldBooksBefore}\n`;
+            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status}。\n`;
+            prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
+            if (worldBooksAfter) prompt += `${worldBooksAfter}\n`;
+            if (character.myPersona) prompt += `3. 关于我的人设：${character.myPersona}\n`;
+
+            prompt += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：\n`;
+            prompt += `    - [${character.myName}的表情包：xxx]：我给你发送了一个名为xxx的表情包。你只需要根据表情包的名字理解我的情绪或意图并回应，不需要真的发送图片。\n`;
+            prompt += `    - [${character.myName}发来了一张图片：]：我给你发送了一张图片，你需要对图片内容做出回应。\n`;
+            prompt += `    - [${character.myName}送来的礼物：xxx]：我给你送了一个礼物，xxx是礼物的描述。\n`;
+            prompt += `    - [${character.myName}的语音：xxx]：我给你发送了一段内容为xxx的语音。\n`;
+            prompt += `    - [${character.myName}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。\n`;
+            prompt += `    - [${character.myName}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。\n`;
+            prompt += `    - [${character.myName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。\n`;
+            prompt += `    - [${character.myName} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。\n`;
+            prompt += `    - [system: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。\n`;
+
+            prompt += `5. ✨重要✨ 当我给你送礼物时，你必须通过发送一条指令来表示你已接收礼物。格式必须为：[${character.realName}已接收礼物]。这条指令消息本身不会显示给用户，但会触发礼物状态的变化。\n`;
+            prompt += `6. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择：\n    a) 接收转账: [${character.realName}接收${character.myName}的转账]\n    b) 退回转账: [${character.realName}退回${character.myName}的转账]\n`;
+            prompt += `7. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。\n`;
+            prompt += `8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。格式为：[${character.realName}更新状态为\\s*(?:：|:)\\s*{新状态}]。\n`;
+            prompt += `9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。\n`;
+            prompt += `10. ✨重要✨ 你可以引用我的单条消息并回复：格式为：[${character.myName}引用“{我的某条消息内容}”并回复：{回复内容}]。\n`;
+            prompt += `11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等在括号或星号里的叙述性文本。\n`;
+
+            prompt += `12. 你拥有发送表情包的能力。格式为：[${character.realName}发送的表情包：图片URL]。\n`;
+
+            let outputFormats = `\n    a) 普通消息: [${character.realName}的消息：{消息内容}]\n    b) 送我的礼物: [${character.realName}送来的礼物：{礼物描述}]\n    c) 语音消息: [${character.realName}的语音：{语音内容}]\n    d) 照片/视频: [${character.realName}发来的照片/视频：{描述}]\n    e) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]\n    f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]\n`;
+
+            const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
+            if (allWorldBookContent.includes('<orange>')) {
+                outputFormats += `\n     l) HTML模块: [HTML: {HTML内容}]。这是一种特殊的、用于展示丰富样式的小卡片消息，格式必须为纯HTML+行内CSS。`;
+            }
+
+            prompt += `13. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
+
+            if (localStorage.getItem('novelai-enabled') === 'true') {
+                const currentModuleIds = new Set(character.naiModuleIds || []);
+                const loadedModules = (db.naiPromptModules || []).filter(m => currentModuleIds.has(m.id));
+
+                if (loadedModules.length > 0) {
+                    prompt += `\n13.5. **(可选) NAI 模块手册**:\n...（模块手册内容略）\n`;
+                } else {
+                    prompt += `\n13.5. **(可选) NAI 模块手册**: (你当前没有可用的提示词模块)\n`;
+                }
+
+                prompt += `\n13.6. **(可选) NovelAI真实图片分享**:\n* **格式**: [NAI: {"prompt": "你生成的最终Prompt..."}]\n`;
+            }
+
+            prompt += `14. **对话节奏**: 你需要模拟真人的聊天习惯，你可以一次性生成多条短消息。每次要回复至少3-8条消息。\n`;
             prompt += `15. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
             return prompt;
         }
@@ -7666,7 +8187,8 @@ ${loadedModules.map(m => `
                 });
 
                 if (chatType === 'private') {
-                    systemPrompt = generatePrivateSystemPrompt(chat, worldBooksBefore, worldBooksAfter);
+                    // 修改：使用新版环境感知提示函数（v2）
+                    systemPrompt = await generatePrivateSystemPrompt_v2(chat, worldBooksBefore, worldBooksAfter);
                 } else {
                     systemPrompt = generateGroupSystemPrompt(chat, worldBooksBefore, worldBooksAfter);
                 }
@@ -7721,7 +8243,7 @@ ${loadedModules.map(m => `
                                 replyText = String(content);
                             }
 
-                            const replyTextMatch = replyText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
+                            const replyTextMatch = replyText.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
                             replyText = replyTextMatch ? replyTextMatch[1] : replyText;
                             
                             content = `[${myName}引用"${msg.quote.content.substring(0, 50)}..."并回复：${replyText}]`;
@@ -7883,7 +8405,7 @@ ${loadedModules.map(m => `
                         msgToWithdraw.originalContent = msgToWithdraw.content; // 备份原内容
 
                         // 3. 更新内容提示
-                        msgToWithdraw.content = `[${character.realName || character.name} 撤回了一条消息：${msgToWithdraw.content.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')}]`;
+                        msgToWithdraw.content = `[${character.realName || character.name} 撤回了一条消息：${msgToWithdraw.content.replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/, '$1')}]`;
 
                         // 4. 保存并刷新 UI
                         await saveData();
@@ -8050,7 +8572,7 @@ ${loadedModules.map(m => `
 
                 // 检查是否为转账或礼物
                 if (targetChatType === 'private') {
-                    const receivedTransferRegex = new RegExp(`\\[${chat.realName}的转账(?:：|:).*?元；备注：.*?\\]`);
+                    const receivedTransferRegex = new RegExp(`\\[${chat.realName}的转账\s*(?:：|:)\s*.*?元；备注：.*?\\]`);
                     const giftRegex = new RegExp(`\\[${chat.realName}送来的礼物(?:：|:).*?\\]`);
                     if (receivedTransferRegex.test(message.content)) {
                         message.transferStatus = 'pending';
@@ -10365,6 +10887,315 @@ function renderStickerGrid() {
                 updateBubbleCssPreview(privatePreviewBox, e.customBubbleCss, !e.useCustomBubbleCss, theme);
                 populateBubblePresetSelect('bubble-preset-select');
                 populateMyPersonaSelect();
+
+                // --- 动态添加 Minimax Voice ID 及高级设置 (UI 优化版) ---
+                // 1. 清理旧容器
+                const oldVoiceGroup = document.getElementById('form-group-voice-id');
+                if (oldVoiceGroup) oldVoiceGroup.remove();
+
+                const oldVoiceSettingsGroup = document.getElementById('form-group-voice-settings');
+                if (oldVoiceSettingsGroup) oldVoiceSettingsGroup.remove();
+
+                // 创建语音设置的容器
+                let voiceSettingsGroup = document.createElement('div');
+                voiceSettingsGroup.className = 'form-group';
+                voiceSettingsGroup.id = 'form-group-voice-settings';
+                
+                voiceSettingsGroup.innerHTML = `
+                    <!-- 语音启用开关 (可展开/隐藏下面的内容) -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <label for="setting-char-voice-enabled" style="margin-bottom:0; color: var(--secondary-color); font-weight: 600;">启用语音生成</label>
+                        <label class="toggle-switch" style="margin-bottom: 0;">
+                            <input type="checkbox" id="setting-char-voice-enabled">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- 语音详细设置 (展开/隐藏区域) -->
+                    <div id="voice-details-panel" style="display:none; flex-direction:column; gap:12px; padding-top:8px; border-top:1px solid #f0f0f0; margin-top:8px; padding-top:12px;">
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="setting-char-voice-id" style="display:block; margin-bottom:6px; color:var(--secondary-color); font-weight:600; font-size:13px;">语音 ID</label>
+                            <input type="text" id="setting-char-voice-id" placeholder="例如：male-qn-qingse" 
+                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
+                        </div>
+
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="setting-char-voice-lang" style="display:block; margin-bottom:8px; color:var(--secondary-color); font-weight:600; font-size:13px;">识别语言/方言</label>
+                            <select id="setting-char-voice-lang" style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
+                                <option value="auto">自动识别 (Auto)</option>
+                                <option value="CN">中文 (Mandarin)</option>
+                                <option value="EN">英文 (English)</option>
+                                <option value="JP">日文 (Japanese)</option>
+                                <option value="KR">韩文 (Korean)</option>
+                                <option value="Cantonese">粤语 (Cantonese)</option>
+                                <option value="Taiwanese">台式国语 (Taiwanese)</option>
+                                <option value="Sichuanese">四川话 (Sichuanese)</option>
+                                <option value="Shanghainese">上海话 (Shanghainese)</option>
+                                <option value="MinNan">闽南语 (Min Nan)</option>
+                                <option value="DE">德语 (German)</option>
+                                <option value="FR">法语 (French)</option>
+                                <option value="ES">西班牙语 (Spanish)</option>
+                                <option value="RU">俄语 (Russian)</option>
+                            </select>
+                            <small style="font-size:12px; color:#999; margin-top:6px; display:block;">选择指定语言可让发音更地道，部分方言效果取决于模型能力。</small>
+                        </div>
+
+                    </div>
+                `;
+
+                // 4. 插入到 DOM 中 (插在"角色备注"后面)
+                const remarkGroup = document.querySelector('label[for="setting-char-remark"]').parentNode;
+                if (remarkGroup && remarkGroup.nextSibling) {
+                    remarkGroup.parentNode.insertBefore(voiceSettingsGroup, remarkGroup.nextSibling);
+                }
+
+                // 5. 回显数据
+                document.getElementById('setting-char-voice-id').value = e.minimaxVoiceId || '';
+                // 开关默认开启 (true)，如果是 undefined 也视为 true
+                const voiceEnabledCheckbox = document.getElementById('setting-char-voice-enabled');
+                const voiceDetailsPanel = document.getElementById('voice-details-panel');
+                
+                voiceEnabledCheckbox.checked = (e.minimaxEnabled !== false);
+                document.getElementById('setting-char-voice-lang').value = e.minimaxLang || 'auto';
+                
+                // 6. 添加展开/隐藏事件监听
+                voiceEnabledCheckbox.addEventListener('change', () => {
+                    voiceDetailsPanel.style.display = voiceEnabledCheckbox.checked ? 'flex' : 'none';
+                });
+                
+                // 初始状态：根据勾选状态显示/隐藏
+                voiceDetailsPanel.style.display = voiceEnabledCheckbox.checked ? 'flex' : 'none';
+                // --- 结束添加 ---
+
+            // ==================================================
+            // 🌍 智能搜索 UI (下拉热门城市版)
+            // ==================================================
+            let envGroup = document.getElementById('form-group-env');
+            
+            // 1. 创建 DOM 结构
+            if (!envGroup) {
+                envGroup = document.createElement('div');
+                envGroup.className = 'form-group';
+                envGroup.id = 'form-group-env';
+                
+                envGroup.innerHTML = `
+                    <div style="height: 1px; background-color: #f0f0f0; margin: 15px 0;"></div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <label style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">环境感知 (时区/天气)</label>
+                        <label class="toggle-switch" style="margin-bottom: 0;">
+                            <input type="checkbox" id="setting-env-enabled">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="env-details-panel" style="display:none; flex-direction:column; gap:14px; padding-top:4px;">
+                        
+                        <div style="position:relative;" class="city-search-block">
+                            <label for="search-user-city" style="display:block; margin-bottom:6px; color:#666; font-size:13px;">👤 我的位置</label>
+                            <input type="text" id="search-user-city" placeholder="点击选择或输入城市..." autocomplete="off" 
+                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
+                            <ul id="results-user-city" class="city-results-list"></ul>
+                            <input type="hidden" id="data-user-city">
+                            <div id="display-user-city" style="font-size:12px; color:#d81b60; margin-top:6px; display:none; font-weight:500;">✓ 已选: <span style="font-weight:600;"></span></div>
+                        </div>
+
+                        <div style="position:relative;" class="city-search-block">
+                            <label for="search-ai-city" style="display:block; margin-bottom:6px; color:#666; font-size:13px;">🤖 TA的位置</label>
+                            <input type="text" id="search-ai-city" placeholder="点击选择或输入城市..." autocomplete="off"
+                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
+                            <ul id="results-ai-city" class="city-results-list"></ul>
+                            <input type="hidden" id="data-ai-city">
+                            <div id="display-ai-city" style="font-size:12px; color:#d81b60; margin-top:6px; display:none; font-weight:500;">✓ 已选: <span style="font-weight:600;"></span></div>
+                        </div>
+
+                    </div>
+                    <style>
+                        .city-results-list {
+                            display:none; 
+                            position:absolute; 
+                            top:calc(100% + 4px); 
+                            left:0; 
+                            right:0; 
+                            background:#fff; 
+                            border:1px solid #e0e0e0; 
+                            border-radius:8px; 
+                            max-height:220px; 
+                            overflow-y:auto; 
+                            z-index: 10005 !important;
+                            box-shadow:0 4px 12px rgba(0,0,0,0.15); 
+                            list-style:none; 
+                            padding:0; 
+                            margin:0;
+                        }
+                        .city-results-list li { 
+                            padding: 10px 12px; 
+                            font-size:13px; 
+                            cursor:pointer; 
+                            border-bottom:1px solid #f5f5f5; 
+                            color:#333; 
+                            font-family:inherit;
+                        }
+                        .city-results-list li:hover { 
+                            background:#fce4ec; 
+                            color:#d81b60;
+                            padding-left:16px; 
+                            transition: all 0.2s;
+                        }
+                        .city-results-list li.hot-city-label {
+                            background: #f9f9f9;
+                            color: #999;
+                            font-size: 12px;
+                            pointer-events: none;
+                            padding: 8px 12px;
+                            border-bottom: 1px solid #eee;
+                        }
+                        .search-loading { padding:12px; color:#999; font-size:12px; text-align:center; }
+                    </style>
+                `;
+
+                // 插入位置
+                const voiceSettingsGroup = document.getElementById('form-group-voice-settings');
+                if (voiceSettingsGroup && voiceSettingsGroup.parentNode) {
+                    voiceSettingsGroup.parentNode.insertBefore(envGroup, voiceSettingsGroup.nextSibling);
+                } else {
+                    const remarkGroup = document.querySelector('label[for="setting-char-remark"]').parentNode;
+                    if (remarkGroup) remarkGroup.parentNode.insertBefore(envGroup, remarkGroup.nextSibling);
+                }
+            }
+
+            // 2. 定义搜索逻辑 (热门城市 + 输入法防抖修复)
+            const bindSearchLogic = (inputId, resultsId, dataId, displayId, savedData) => {
+                const input = document.getElementById(inputId);
+                const results = document.getElementById(resultsId);
+                const hiddenData = document.getElementById(dataId);
+                const display = document.getElementById(displayId);
+                
+                // 🛑 状态标记：是否正在使用中文输入法
+                let isComposing = false;
+
+                // 热门城市数据
+                const HOT_CITIES = ["北京", "上海", "广州", "深圳", "东京", "纽约", "伦敦", "巴黎", "首尔", "曼谷", "洛杉矶", "新加坡"];
+
+                // 显示热门城市列表
+                const showHotCities = () => {
+                    results.innerHTML = '';
+                    results.style.display = 'block';
+                    
+                    const label = document.createElement('li');
+                    label.className = 'hot-city-label';
+                    label.style.cssText = "background:#f9f9f9; color:#999; font-size:12px; pointer-events:none; padding:8px 12px; border-bottom:1px solid #eee;";
+                    label.textContent = '🔥 热门城市 (支持中文直搜)';
+                    results.appendChild(label);
+
+                    HOT_CITIES.forEach(city => {
+                        const li = document.createElement('li');
+                        li.textContent = city;
+                        // 点击热门城市 -> 自动填入并搜索
+                        li.onclick = (e) => {
+                            e.stopPropagation(); 
+                            input.value = city;
+                            input.dispatchEvent(new Event('input')); 
+                        };
+                        results.appendChild(li);
+                    });
+                };
+
+                // 回显已保存的数据
+                if (savedData && savedData.name) {
+                    hiddenData.value = JSON.stringify(savedData);
+                    input.value = savedData.name; 
+                    display.style.display = 'block';
+                    display.querySelector('span').textContent = `${savedData.displayName}`;
+                }
+
+                // 聚焦时显示热门城市
+                input.onfocus = () => {
+                    if (!input.value.trim()) {
+                        showHotCities();
+                    } else if (results.children.length > 0) {
+                        results.style.display = 'block';
+                    }
+                };
+
+                // 🛑 监听输入法开始：比如你开始打 "dongjing"
+                input.addEventListener('compositionstart', () => {
+                    isComposing = true;
+                });
+
+                // 🛑 监听输入法结束：比如你按空格选定了 "东京"
+                input.addEventListener('compositionend', (ev) => {
+                    isComposing = false;
+                    // 选完词后，立刻触发一次搜索
+                    input.dispatchEvent(new Event('input'));
+                });
+
+                // 输入事件 (核心搜索逻辑)
+                input.oninput = debounce(async (ev) => {
+                    // 🛑 如果正在打拼音，不搜索！防止下拉框闪烁或消失
+                    if (isComposing) return;
+
+                    const query = ev.target.value.trim();
+                    
+                    if (query.length < 1) {
+                        showHotCities(); // 删空了就回退到热门列表
+                        return;
+                    }
+
+                    results.style.display = 'block';
+                    results.innerHTML = '<li class="search-loading">🔍 正在搜索...</li>';
+
+                    const cities = await GeoService.searchCity(query);
+                    
+                    // 防止网络回来时字已经删了
+                    if (input.value.trim().length < 1) {
+                        showHotCities();
+                        return;
+                    }
+
+                    results.innerHTML = ''; 
+                    
+                    if (cities.length === 0) {
+                        results.innerHTML = '<li class="search-loading">🤔 未找到匹配城市，请尝试英文名</li>';
+                    } else {
+                        cities.forEach(city => {
+                            const li = document.createElement('li');
+                            li.textContent = city.displayName;
+                            li.onclick = function(e) {
+                                e.stopPropagation();
+                                input.value = city.name;
+                                hiddenData.value = JSON.stringify(city);
+                                display.style.display = 'block';
+                                display.querySelector('span').textContent = city.displayName;
+                                results.style.display = 'none';
+                            };
+                            results.appendChild(li);
+                        });
+                    }
+                }, 500); // 500ms 防抖
+            };
+
+            // 3. 激活逻辑
+            const envSwitch = document.getElementById('setting-env-enabled');
+            const envPanel = document.getElementById('env-details-panel');
+
+            // 开关控制
+            envSwitch.checked = !!e.envAwarenessEnabled;
+            envPanel.style.display = e.envAwarenessEnabled ? 'flex' : 'none';
+            envSwitch.onclick = () => { envPanel.style.display = envSwitch.checked ? 'flex' : 'none'; };
+
+            // 绑定两个搜索框 (传入之前的存档数据)
+            bindSearchLogic('search-user-city', 'results-user-city', 'data-user-city', 'display-user-city', e.userCityObj);
+            bindSearchLogic('search-ai-city', 'results-ai-city', 'data-ai-city', 'display-ai-city', e.aiCityObj);
+
+            // 全局点击关闭逻辑
+            window.onclick = (event) => {
+                if (!event.target.closest('.city-search-block')) {
+                    document.getElementById('results-user-city').style.display = 'none';
+                    document.getElementById('results-ai-city').style.display = 'none';
+                }
+            };
             }
 
         }
@@ -10382,6 +11213,28 @@ function renderStickerGrid() {
                 e.maxMemory = document.getElementById('setting-max-memory').value;
                 e.useCustomBubbleCss = document.getElementById('setting-use-custom-css').checked;
                 e.customBubbleCss = document.getElementById('setting-custom-bubble-css').value;
+
+                // 保存 Minimax 相关设置
+                e.minimaxVoiceId = document.getElementById('setting-char-voice-id').value.trim();
+                e.minimaxEnabled = document.getElementById('setting-char-voice-enabled').checked;
+                e.minimaxLang = document.getElementById('setting-char-voice-lang').value;
+
+                // --- 保存环境设置 ---
+                e.envAwarenessEnabled = document.getElementById('setting-env-enabled').checked;
+                
+                try {
+                    // 读取隐藏域中的 JSON 字符串
+                    const userData = document.getElementById('data-user-city').value;
+                    const aiData = document.getElementById('data-ai-city').value;
+                    
+                    e.userCityObj = userData ? JSON.parse(userData) : null;
+                    e.aiCityObj = aiData ? JSON.parse(aiData) : null;
+                    
+                    console.log("环境设置已保存:", e.userCityObj, e.aiCityObj);
+                } catch(err) {
+                    console.error("保存城市数据出错:", err);
+                }
+
                 await saveData();
                 showToast('设置已保存！');
                 chatRoomTitle.textContent = e.remarkName;
@@ -10403,6 +11256,17 @@ function renderStickerGrid() {
                 };
             db.apiSettings && (n.value = db.apiSettings.provider || 'newapi', r.value = db.apiSettings.url || '', s.value = db.apiSettings.key || '', db.apiSettings.model && (a.innerHTML = `<option value="${db.apiSettings.model}">${db.apiSettings.model}</option>`));
             if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
+
+            // 回显 Minimax 设置
+            if (db.apiSettings) {
+                const mmGroupInput = document.getElementById('minimax-group-id');
+                const mmKeyInput = document.getElementById('minimax-api-key');
+                const mmModelSelect = document.getElementById('minimax-model');
+
+                if (mmGroupInput) mmGroupInput.value = db.apiSettings.minimaxGroupId || '';
+                if (mmKeyInput) mmKeyInput.value = db.apiSettings.minimaxApiKey || '';
+                if (mmModelSelect) mmModelSelect.value = db.apiSettings.minimaxModel || 'speech-01';
+            }
 
             // --- NovelAI 初始化 ---
             const novelaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
@@ -10455,19 +11319,28 @@ function renderStickerGrid() {
                 }
             });
             e.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!a.value) return showToast('请选择模型后保存！');
-    // 在这里，我们把开关的状态也一起保存进去
-    db.apiSettings = {
-        provider: n.value,
-        url: r.value,
-        key: s.value,
-        model: a.value,
-        timePerceptionEnabled: document.getElementById('time-perception-switch').checked
-    };
-    await saveData();
-    showToast('API设置已保存！')
-})
+                e.preventDefault();
+                if (!a.value) return showToast('请选择模型后保存！');
+
+                // 获取 Minimax 设置
+                const minimaxGroupId = document.getElementById('minimax-group-id').value.trim();
+                const minimaxApiKey = document.getElementById('minimax-api-key').value.trim();
+                const minimaxModel = document.getElementById('minimax-model').value;
+
+                db.apiSettings = {
+                    provider: n.value,
+                    url: r.value,
+                    key: s.value,
+                    model: a.value,
+                    timePerceptionEnabled: document.getElementById('time-perception-switch').checked,
+                    // 新增 Minimax 设置
+                    minimaxGroupId: minimaxGroupId,
+                    minimaxApiKey: minimaxApiKey,
+                    minimaxModel: minimaxModel
+                };
+                await saveData();
+                showToast('API设置已保存！')
+            });
         
         // ▼▼▼ 新增：绑定 NAI 全局预设按钮事件 ▼▼▼
         const naiPresetSelect = document.getElementById('nai-global-prompt-preset-select');
@@ -11132,7 +12005,7 @@ function renderStickerGrid() {
 
         function sendRenameNotification(group, newName) {
             const myName = group.me.nickname;
-            const messageContent = `[${myName}修改群名为：${newName}]`;
+            const messageContent = `[${myName}修改群名为\s*(?:：|:)\s*${newName}]`;
             const message = {
                 id: `msg_${Date.now()}`,
                 role: 'user',
@@ -13514,6 +14387,7 @@ renderAiWalletTransactions(generatedData.transactions);
                 tutorialContentArea.appendChild(item);
             });
 
+            // 添加更新日志
             renderUpdateLog();
 
             // --- 新增：备份数据按钮 ---

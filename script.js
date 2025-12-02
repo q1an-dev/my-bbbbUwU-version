@@ -1,178 +1,4 @@
-﻿/*
- * 小章鱼AI聊天应用 - 核心脚本
- * Version: 1.3.1
- * Last Updated: 2025-11-23
- *
- * ==========================================
- * 🌍 全球城市搜索与天气服务 (完整版)
- * ==========================================
- */
-
-// 1. 防抖函数 (必须放在最前面，确保搜索框能用)
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-}
-
-// 2. 天气代码映射
-const WEATHER_CODES = {
-    0: "晴朗", 1: "大部分晴", 2: "多云", 3: "阴天",
-    45: "有雾", 48: "冰雾", 
-    51: "毛毛雨", 53: "小雨", 55: "细雨",
-    61: "下雨", 63: "中雨", 65: "大雨",
-    71: "小雪", 73: "中雪", 75: "大雪",
-    80: "阵雨", 95: "雷雨", 96: "雷阵雨伴冰雹"
-};
-
-// 3. 城市搜索服务 (V5.0 - 强制英文映射版)
-const GeoService = {
-    // 📖 核心字典：把中文强制转成 API 能听懂的英文
-    // 这就是为什么搜 "北京" 不会再出 "重庆那个村子" 的原因
-    CITY_MAPPINGS: {
-        // 🇨🇳 国内大城市 (强制转拼音/英文，锁定行政中心)
-        "北京": "Beijing", "上海": "Shanghai", "广州": "Guangzhou", "深圳": "Shenzhen",
-        "天津": "Tianjin", "重庆": "Chongqing", "成都": "Chengdu", "杭州": "Hangzhou",
-        "武汉": "Wuhan", "西安": "Xi'an", "南京": "Nanjing", "香港": "Hong Kong",
-        "澳门": "Macau", "台北": "Taipei", "长沙": "Changsha", "昆明": "Kunming",
-        
-        // 🌏 国际名城 (强制转英文，100%精准)
-        "东京": "Tokyo", "大阪": "Osaka", "京都": "Kyoto",
-        "纽约": "New York", "伦敦": "London", "巴黎": "Paris",
-        "首尔": "Seoul", "悉尼": "Sydney", "柏林": "Berlin", 
-        "莫斯科": "Moscow", "多伦多": "Toronto", "新加坡": "Singapore", 
-        "曼谷": "Bangkok", "迪拜": "Dubai", "洛杉矶": "Los Angeles", 
-        "旧金山": "San Francisco", "温哥华": "Vancouver"
-    },
-
-    async searchCity(query) {
-        if (!query || query.trim().length < 1) return [];
-        
-        let searchName = query.trim();
-        
-        // 1. 【翻译步骤】如果字典里有，直接替换成英文！
-        if (this.CITY_MAPPINGS[searchName]) {
-            searchName = this.CITY_MAPPINGS[searchName]; // 东京 -> Tokyo
-        } 
-        // 2. 如果是中文且没带"市"，自动补"市" (针对国内中小城市)
-        else if (/[\u4e00-\u9fa5]/.test(searchName) && !searchName.includes('市')) {
-            searchName = searchName + "市"; 
-        }
-
-        // 3. 用处理过的名字去搜
-        let results = await this._fetchFromApi(searchName);
-
-        // 4. 容错：如果补了"市"反而搜不到，去掉再试一次
-        if (results.length === 0 && searchName.endsWith('市')) {
-            results = await this._fetchFromApi(searchName.slice(0, -1));
-        }
-
-        if (results.length === 0) return [];
-
-        // 5. 排序：首都在前，人多的在前
-        return results.sort((a, b) => {
-            const getLevel = (code) => {
-                if (code === 'PPLC') return 10; // 首都
-                if (code === 'PPLA') return 5;  // 省会
-                return 0;
-            };
-            const levelDiff = getLevel(b.feature_code) - getLevel(a.feature_code);
-            if (levelDiff !== 0) return levelDiff;
-            return (b.population || 0) - (a.population || 0);
-        }).slice(0, 10).map(item => {
-            // 格式化显示
-            const admin1 = item.admin1 || "";
-            const country = item.country || "";
-            let displayStr = item.name;
-            if (admin1 && admin1 !== item.name) displayStr += ` (${admin1})`;
-            displayStr += ` - ${country}`;
-
-            return {
-                name: item.name, 
-                country: country, 
-                region: admin1, 
-                lat: item.latitude, 
-                lng: item.longitude, 
-                timezone: item.timezone, 
-                displayName: displayStr
-            };
-        });
-    },
-
-    async _fetchFromApi(q) {
-        try {
-            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=20&language=zh&format=json`;
-            const controller = new AbortController();
-            setTimeout(() => controller.abort(), 5000);
-            const res = await fetch(url, { signal: controller.signal });
-            const data = await res.json();
-            
-            // 过滤掉人口太少的"幽灵村庄"
-            return (data.results || []).filter(item => {
-                const isImportant = ['PPLC', 'PPLA', 'PPLA2'].includes(item.feature_code);
-                const hasPop = item.population && item.population > 1000;
-                return isImportant || hasPop;
-            });
-        } catch (e) { return []; }
-    }
-};
-
-// 4. 天气获取服务
-const WeatherService = {
-    getCache: (key) => {
-        try {
-            const cached = localStorage.getItem('weather_cache_' + key);
-            if (!cached) return null;
-            const data = JSON.parse(cached);
-            if (Date.now() - data.timestamp > 30 * 60 * 1000) return null; 
-            return data.weather;
-        } catch(e) { return null; }
-    },
-    
-    setCache: (key, weatherData) => {
-        try {
-            localStorage.setItem('weather_cache_' + key, JSON.stringify({ timestamp: Date.now(), weather: weatherData }));
-        } catch(e) {}
-    },
-
-    async fetchWeather(cityObj) {
-        if (!cityObj || !cityObj.lat) return null;
-        const cacheKey = `${cityObj.lat.toFixed(2)}_${cityObj.lng.toFixed(2)}`;
-        
-        const cached = this.getCache(cacheKey);
-        if (cached) return cached;
-
-        try {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${cityObj.lat}&longitude=${cityObj.lng}&current_weather=true&timezone=${encodeURIComponent(cityObj.timezone || 'auto')}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('API Error');
-            const data = await response.json();
-            const w = data.current_weather;
-            
-            const weatherInfo = {
-                temp: w.temperature,
-                desc: WEATHER_CODES[w.weathercode] || "未知",
-                isDay: w.is_day === 1 ? "白天" : "夜晚"
-            };
-            this.setCache(cacheKey, weatherInfo);
-            return weatherInfo;
-        } catch (e) { return null; }
-    },
-
-    getLocalTime(cityObj) {
-        if (!cityObj || !cityObj.timezone) return "";
-        try {
-            return new Date().toLocaleTimeString('zh-CN', { 
-                timeZone: cityObj.timezone, 
-                hour: '2-digit', minute: '2-digit', hour12: false 
-            });
-        } catch (e) { return ""; }
-    }
-};
-
-    async function updateBatteryStatus() {
+﻿    async function updateBatteryStatus() {
         // 首先检查浏览器是否支持电池API
         if ('getBattery' in navigator) {
             try {
@@ -332,52 +158,41 @@ const WeatherService = {
 </div>
 
 <hr style="margin:20px 0; opacity:.3">
-<div class="form-group" style="background-color: #fff8fa; padding: 15px; border-radius: 12px; border: 1px solid #fce4ec;">
-    <label style="color: var(--primary-color); font-weight: 600; margin-bottom: 10px; display:block;">🤖 后台自动活动 (分钟/次)</label>
-    <div class="api-frequency-grid">
-        <div class="api-frequency-item">
-            <small style="color:#d32f2f;">高频</small>
-            <input type="number" id="bg-freq-high" placeholder="60">
-        </div>
-        <div class="api-frequency-item">
-            <small style="color:#1976d2;">中频</small>
-            <input type="number" id="bg-freq-medium" placeholder="180">
-        </div>
-        <div class="api-frequency-item">
-            <small style="color:#388e3c;">低频</small>
-            <input type="number" id="bg-freq-low" placeholder="480">
-        </div>
+<div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+    <div style="flex-grow: 1;">
+        <label for="minimax-switch" style="margin-bottom: 0; display: block; color: var(--secondary-color); font-weight: 600;">
+            启用 Minimax 语音合成
+        </label>
+        <p style="font-size: 13px; font-weight: normal; color: #666; margin-top: 8px; margin-bottom: 0; line-height: 1.5;">
+            开启后可使用 Minimax API 将文字转换为语音播放
+        </p>
     </div>
-    <button type="button" id="open-bg-activity-manager" class="btn btn-secondary" style="width: 100%;">管理角色活动频率</button>
-    <p style="font-size: 12px; color: #888; margin-top: 10px; line-height: 1.4;">
-        * 即使网页关闭，下次打开时AI也会根据错失的时间"补发"生活动态。<br>
-        * 必须在下方保存API设置才会生效。
-    </p>
+    <label class="toggle-switch" style="margin-top: 5px;">
+        <input type="checkbox" id="minimax-switch">
+        <span class="slider"></span>
+    </label>
 </div>
 
-<hr style="margin:20px 0; opacity:.3">
-<div class="form-group">
-    <label for="minimax-group-id">Minimax Group ID</label>
-    <input type="text" id="minimax-group-id" placeholder="请输入 Minimax Group ID">
-</div>
-<div class="form-group">
-    <label for="minimax-api-key">Minimax API Key</label>
-    <input type="password" id="minimax-api-key" placeholder="请输入 Minimax API Key">
-</div>
-<div class="form-group">
-    <label for="minimax-model">语音模型</label>
-    <select id="minimax-model">
-        <option value="speech-01" selected>Speech-01</option>
-        <option value="speech-01-240228">Speech-01 (240228 特调版)</option>
-        <option value="speech-01-turbo">Speech-01 Turbo</option>
-        <option value="speech-01-hd">Speech-01 HD</option>
-        <option value="speech-02">Speech-02</option>
-        <option value="speech-02-turbo">Speech-02 Turbo</option>
-        <option value="speech-02-hd">Speech-02 HD</option>
-        <option value="speech-2.6-turbo">Speech-2.6 Turbo</option>
-        <option value="speech-2.6-hd">Speech-2.6 HD</option>
-    </select>
-    <p style="font-size: 12px; color: #888; margin-top: 8px;">* 配置后，角色发送的语音消息将支持点击播放。请在角色设置中单独填写 Voice ID。</p>
+<div id="minimax-details" style="display: none;">
+    <div class="form-group" style="background: #f0f4f8; padding: 15px; border-radius: 12px; border: 1px solid #e1e8ed;">
+        <label style="color: #4a6f8a; font-weight: bold; margin-bottom: 10px; display: block;">Minimax 语音设置</label>
+        <div class="form-group">
+            <label for="minimax-group-id" style="font-size: 13px;">Group ID</label>
+            <input type="text" id="minimax-group-id" placeholder="请输入 Minimax Group ID">
+        </div>
+        <div class="form-group">
+            <label for="minimax-api-key" style="font-size: 13px;">API Key</label>
+            <input type="password" id="minimax-api-key" placeholder="请输入 Minimax API Key">
+        </div>
+        <div class="form-group">
+            <label for="minimax-model" style="font-size: 13px;">语音模型</label>
+            <select id="minimax-model">
+                <option value="speech-01" selected>speech-01 (基础版)</option>
+                <option value="speech-02">speech-02 (增强版)</option>
+            </select>
+        </div>
+        <p style="font-size: 12px; color: #888;">* 配置后，角色发送的语音消息将支持点击播放。请在角色设置中单独填写 Voice ID 并启用语音合成。</p>
+    </div>
 </div>
 <hr style="margin:20px 0; opacity:.3">
 <div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
@@ -517,8 +332,8 @@ const WeatherService = {
                const defaultIcons = {
             'chat-list-screen': {name: '404', url: 'https://i.postimg.cc/VvQB8dQT/chan-143.png'},
             'api-settings-screen': {name: 'api', url: 'https://i.postimg.cc/50FqT8GL/chan-125.png'},
-            'world-book-screen': {name: '世界书', url: 'https://i.postimg.cc/prCWkrKT/chan-74.png'},
-            'peek-select-btn': {name: '查手机', url: 'https://i.postimg.cc/m2DRpk7v/chan-39.png'},
+                        'world-book-screen': {name: '世界书', url: 'https://i.postimg.cc/prCWkrKT/chan-74.png'},
+            'peek-select-btn': {name: '查手机', url: 'https://i.postimg.cc/m2DRpk7v/chan-39.png'}, // <-- NEW
             'customize-screen': {name: '自定义', url: 'https://i.postimg.cc/vZVdC7gt/chan-133.png'},
             'font-settings-screen': {name: '字体', url: 'https://i.postimg.cc/FzVtC0x4/chan-21.png'},
             'tutorial-screen': {name: '教程', url: 'https://i.postimg.cc/6QgNzCFf/chan-118.png'},
@@ -552,37 +367,10 @@ const WeatherService = {
             'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons', 'stickerCategories',
             'apiPresets', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
             'globalCssPresets', 'homeSignature', 'forumPosts', 'forumBindings', 'pomodoroTasks', 'pomodoroSettings', 'insWidgetSettings', 'homeWidgetSettings',
-            'naiGlobalPromptPresets', 'fontPresets', 'bgActivitySettings', 'diaries', 'diaryFontUrl' // ▼▼▼ 新增：日记存储和字体 ▼▼▼
+            'naiGlobalPromptPresets', 'fontPresets' // ▼▼▼ 新增 ▼▼▼
         ];
-        const appVersion = "1.3.1"; // Current app version
+        const appVersion = "1.2.0"; // Current app version
         const updateLog = [
-            {
-                version: "1.3.1",
-                date: "2025-11-23",
-                notes: [
-                    "新增：日记随机交换功能，写完日记后可直接随机匹配AI角色",
-                    "新增：日记列表快捷交换按钮（🎲），一键随机交换日记",
-                    "改进：优化交换日记界面标题，改为'💌 我的日记本'",
-                    "改进：修复日记阅读页返回按钮白屏问题",
-                    "改进：修复删除日记后日历便签不消失的问题",
-                    "美化：优化删除按钮SVG图标设计，使用标准垃圾桶图标",
-                    "美化：完善图片风格样式（拍立得、胶片、贴纸、邮票、旧时光、黑白）",
-                ]
-            },
-            {
-                version: "1.3.0",
-                date: "2025-11-23",
-                notes: [
-                    "新增：集成 NAI 生图功能与 NAI 模块手册（方便按模块复用提示词）",
-                    "新增：集成 Minimax 语音生成功能与语音 ID 管理",
-                    "新增：环境感知（城市天气/时区注入）与智能提示注入逻辑",
-                    "改进：将'查手机'快捷入口搬到主页并新增'查手机 - 钱包'项（更易访问）",
-                    "改进：增加大量预设支持多选，提升配置灵活性",
-                    "美化：调整界面样式与若干表单/控件的视觉细节",
-                    "修复：修正消息格式解析的正则表达式，提升解析鲁棒性",
-                    "工具：新增'清理缓存'按钮，方便快速清除本地缓存数据",
-                ]
-            },
             {
                 version: "1.2.0",
                 date: "2025-10-15",
@@ -641,20 +429,11 @@ const WeatherService = {
                 avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
                 bubble2: 'miss u.'
             },
-            // ▼▼▼ 新增：后台活动全局设置 ▼▼▼
-            bgActivitySettings: {
-                high: 60,    // 高频：60分钟
-                medium: 180, // 中频：3小时
-                low: 480,    // 低频：8小时
-                enabled: true // 全局总开关
-            },
             // ▼▼▼ 新增：NAI 模块手册 (全局) ▼▼▼
             naiPromptModules: [],
             // ▼▼▼ 新增：NAI 全局提示词预设 ▼▼▼
             naiGlobalPromptPresets: [],
             fontPresets: [], // ▼▼▼ 新增 ▼▼▼
-            diaries: [], // ▼▼▼ 新增：日记存储 ▼▼▼
-            diaryFontUrl: '', // ▼▼▼ 新增：日记独立字体URL ▼▼▼
         };
         let currentChatId = null, currentChatType = null, isGenerating = false, longPressTimer = null,
             isInMultiSelectMode = false, editingMessageId = null, currentPage = 1, currentTransferMessageId = null,
@@ -902,9 +681,7 @@ const WeatherService = {
                     insWidgetSettings: { avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', bubble1: 'love u.', avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg', bubble2: 'miss u.' },
                     homeWidgetSettings: defaultWidgetSettings,
                     naiGlobalPromptPresets: [], // ▼▼▼ 新增 ▼▼▼
-                    fontPresets: [], // ▼▼▼ 新增 ▼▼▼
-                    diaries: [], // ▼▼▼ 新增：日记存储 ▼▼▼
-                    diaryFontUrl: '' // ▼▼▼ 新增：日记独立字体URL ▼▼▼
+                    fontPresets: [] // ▼▼▼ 新增 ▼▼▼
                 };
                 db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
             });
@@ -2308,302 +2085,11 @@ const WeatherService = {
             }
         }
 
-// ==========================================
-// 🤖 AI 后台生活系统 (Background Life System)
-// ==========================================
-
-// 1. 管理界面逻辑
-function setupBackgroundActivitySystem() {
-    const modal = document.getElementById('background-activity-modal');
-    const list = document.getElementById('bg-activity-list');
-    const selectAllBtn = document.getElementById('bg-activity-select-all-btn');
-    const closeBtn = document.getElementById('close-bg-activity-modal');
-    const actionButtons = document.querySelectorAll('.batch-action-bar button');
-
-    // 渲染列表
-    const renderList = () => {
-        list.innerHTML = '';
-        // 只显示私聊角色
-        const chars = db.characters.filter(c => c.id.startsWith('char_'));
-
-        if (chars.length === 0) {
-            list.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">没有可配置的角色</p>';
-            return;
-        }
-
-        chars.forEach(char => {
-            // 默认值处理
-            if (!char.bgFrequency) char.bgFrequency = 'off';
-
-            const li = document.createElement('li');
-            li.className = 'bg-activity-item';
-            li.dataset.id = char.id;
-
-            let badgeClass = char.bgFrequency;
-            let badgeText = '';
-            switch(char.bgFrequency) {
-                case 'high': badgeText = '高频'; break;
-                case 'medium': badgeText = '中频'; break;
-                case 'low': badgeText = '低频'; break;
-                default: badgeText = '已关闭'; badgeClass = 'off';
-            }
-
-            li.innerHTML = `
-                <div class="checkbox-wrapper">
-                    <input type="checkbox" class="char-select-cb">
-                </div>
-                <img src="${char.avatar}" alt="avatar">
-                <div class="bg-activity-info">
-                    <span class="bg-activity-name">${char.remarkName}</span>
-                    <span class="bg-activity-status">
-                        当前: <span class="freq-badge ${badgeClass}">${badgeText}</span>
-                    </span>
-                </div>
-            `;
-
-            // 点击条目切换选中
-            li.addEventListener('click', (e) => {
-                const cb = li.querySelector('.char-select-cb');
-                cb.checked = !cb.checked;
-                li.classList.toggle('selected', cb.checked);
-            });
-
-            list.appendChild(li);
-        });
-    };
-
-    renderList();
-    modal.classList.add('visible');
-
-    // 全选/反选
-    selectAllBtn.onclick = () => {
-        const allCbs = list.querySelectorAll('.char-select-cb');
-        const anyUnchecked = Array.from(allCbs).some(cb => !cb.checked);
-
-        allCbs.forEach(cb => {
-            cb.checked = anyUnchecked;
-            cb.closest('li').classList.toggle('selected', anyUnchecked);
-        });
-        selectAllBtn.textContent = anyUnchecked ? "取消全选" : "全选";
-    };
-
-    // 批量设置按钮
-    actionButtons.forEach(btn => {
-        btn.onclick = async () => {
-            const action = btn.dataset.action; // 'high', 'medium', 'low', 'off'
-            const selectedItems = list.querySelectorAll('.bg-activity-item.selected');
-
-            if (selectedItems.length === 0) return showToast('请先选择角色');
-
-            const ids = Array.from(selectedItems).map(item => item.dataset.id);
-
-            // 更新数据
-            db.characters.forEach(char => {
-                if (ids.includes(char.id)) {
-                    char.bgFrequency = action;
-                    // 如果开启，且从未设置过时间，初始化为当前时间（避免刚开启就狂发）
-                    if (action !== 'off' && !char.lastBgTime) {
-                        char.lastBgTime = Date.now();
-                    }
-                }
-            });
-
-            await saveData();
-            renderList(); // 刷新列表显示新状态
-            showToast(`已将 ${selectedItems.length} 位角色设置为 ${btn.textContent}`);
-        };
-    });
-
-    closeBtn.onclick = () => modal.classList.remove('visible');
-}
-
-// 2. 心跳检测循环 (主逻辑)
-function startBackgroundHeartbeat() {
-    // 每 60 秒检查一次
-    setInterval(async () => {
-        // 如果没有全局设置或未启用，跳过
-        if (!db.bgActivitySettings || !db.bgActivitySettings.enabled) return;
-
-        const now = Date.now();
-        const settings = db.bgActivitySettings;
-
-        // 遍历所有私聊角色
-        for (const char of db.characters) {
-            // 1. 检查是否开启
-            if (!char.bgFrequency || char.bgFrequency === 'off') continue;
-
-            // 2. 获取该角色设定的间隔 (分钟 -> 毫秒)
-            let intervalMinutes = settings[char.bgFrequency] || 180; // 默认中频
-
-            // 添加一点随机性 (±10%) 防止所有角色同时发消息
-            const jitter = intervalMinutes * 0.1 * (Math.random() - 0.5);
-            const intervalMs = (intervalMinutes + jitter) * 60 * 1000;
-
-            // 3. 检查时间是否到了
-            const lastTime = char.lastBgTime || 0;
-
-            // 如果是第一次运行 (lastTime=0)，我们不立即触发，而是设为当前时间，从现在开始计时
-            if (lastTime === 0) {
-                char.lastBgTime = now;
-                await saveData(); // 保存初始时间
-                continue;
-            }
-
-            if (now - lastTime > intervalMs) {
-                // ★★★ 触发后台消息生成 ★★★
-                console.log(`[后台活动] 触发角色: ${char.remarkName} (频率: ${char.bgFrequency})`);
-                await triggerBackgroundEvent(char);
-
-                // 更新时间并保存
-                char.lastBgTime = now;
-                await saveData();
-            }
-        }
-    }, 60000); // 60s loop
-}
-
-// 3. 生成后台生活消息
-async function triggerBackgroundEvent(char) {
-    const { url, key, model } = db.apiSettings;
-    if (!url || !key || !model) return;
-
-    // 1. 准备环境信息 (天气/时间)
-    let envInfo = "";
-    if (char.envAwarenessEnabled && char.aiCityObj) {
-        const city = char.aiCityObj;
-        const time = WeatherService.getLocalTime(city);
-        try {
-            const weather = await WeatherService.fetchWeather(city);
-            if (weather) {
-                envInfo = `\n[当前环境] 地点:${city.displayName}, 时间:${time}, 天气:${weather.desc}, 气温:${Math.round(weather.temp)}度。`;
-            }
-        } catch(e) {
-            console.warn('天气获取失败:', e);
-        }
-    }
-
-    // 2. 随机决定分享类型
-    const eventTypes = [
-        "分享一张照片（自拍、风景或美食）",
-        "分享一首正在听的歌的歌词",
-        "吐槽当前的天气或气温",
-        "分享刚才遇到的一个小八卦/趣事",
-        "单纯的碎碎念/撒娇/想念用户",
-        "分享最近看的综艺/剧集/帖子等"
-    ];
-    const randomType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-
-    // 3. 检查 NAI 开关状态
-    const isNaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
-
-    // 4. 动态构建格式指令
-    let photoFormatInstruction = "";
-    if (isNaiEnabled) {
-        // 开了 NAI：教它生图
-        photoFormatInstruction = `   - 发送生活照/自拍(推荐): [NAI: {"prompt": "英文Prompt..."}] (用于生成你的自拍、食物、风景等真实感照片，Prompt必须是英文)`;
-    } else {
-        // 没开 NAI：教它用模拟格式
-        photoFormatInstruction = `   - 发送生活照/自拍(模拟): [${char.realName}发来的照片/视频：{照片内容描述}] (仅用于文字模拟发送照片，不要编造URL)`;
-    }
-
-    // 5. 构建 Prompt
-    let prompt = `你现在处于后台"生活模式"。用户当前不在聊天界面。
-请你根据你的人设 (${char.persona})，主动给用户发送几条消息。
-${envInfo}
-
-**本轮消息的主题是**：${randomType}
-
-**要求**：
-1. **语气自然**：就像真人闲暇时随手发的一些消息。不要太正式，可以用口语、表情包、NAI生图（如果开关打开）等消息格式。
-2. **内容结合**：如果是吐槽天气，请结合上面的[当前环境]信息。如果是分享生活，请符合你的兴趣设定。
-3. **不要打招呼**：不要说"你好"、"在吗"，直接说事。
-4. **长度**：2-6句话即可，不要长篇大论。
-
-请直接输出消息内容，不要包含任何解释。`;
-
-    try {
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-            body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.9
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            let content = data.choices[0].message.content.trim();
-
-            // 简单的格式清理
-            if (!content.startsWith('[')) {
-                content = `[${char.realName}的消息：${content}]`;
-            }
-
-            // 构造消息对象
-            const message = {
-                id: `msg_bg_${Date.now()}`,
-                role: 'assistant',
-                content: content,
-                parts: [{ type: 'text', text: content }],
-                timestamp: Date.now(),
-                senderId: char.id
-            };
-
-            // NAI 特殊处理
-            if (content.includes('[NAI:')) {
-                // 如果没开开关但AI还是发了NAI（极少情况），这里做个兜底或者直接允许（因为Prompt已经控制了）
-                // 这里保持原有逻辑即可，因为Prompt已经做了源头控制
-                const jsonMatch = content.match(/\[NAI:\s*({.*?})\]/);
-                if (jsonMatch) {
-                    try {
-                        const json = JSON.parse(jsonMatch[1]);
-                        // 异步生成图片
-                        generateNovelAIImageForChat(json.prompt, char.id, 'private').then(imgData => {
-                            message.type = 'naiimag';
-                            message.imageUrl = imgData.imageUrl;
-                            message.fullPrompt = imgData.fullPrompt;
-                            message.content = `[${char.realName}的消息：${json.prompt}]`;
-                            saveData();
-                            if (currentChatId === char.id) {
-                                renderMessages(false, true);
-                            }
-                        }).catch(e => console.error('后台生图失败', e));
-                    } catch(e) {
-                        console.error('NAI JSON解析失败:', e);
-                    }
-                }
-            }
-
-            // 存入历史
-            char.history.push(message);
-            char.unreadCount = (char.unreadCount || 0) + 1;
-            await saveData();
-
-            if (document.getElementById('chat-list-screen').classList.contains('active')) {
-                renderChatList();
-            }
-
-            if ("Notification" in window && Notification.permission === "granted") {
-                new Notification(char.remarkName, {
-                    body: content.replace(/\[.*?的消息：(.*?)\]/, '$1'),
-                    icon: char.avatar,
-                    tag: 'bg-activity-' + char.id
-                });
-            }
-        }
-    } catch (e) {
-        console.error('后台活动生成失败:', e);
-    }
-}
-
         const init = async () => {
             await loadData();
             if (!db.homeWidgetSettings || !db.homeWidgetSettings.topLeft) {
             db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
             }
-            applyDiaryFont(db.diaryFontUrl); // ▼▼▼ 新增：初始化加载日记字体 ▼▼▼
             document.body.addEventListener('click', (e) => {
                 if (e.target.closest('.context-menu')) {
                     e.stopPropagation();
@@ -2636,7 +2122,7 @@ ${envInfo}
                         return;
                     }
                     
-                    if (target === 'music-screen' || target === 'piggy-bank-screen') {
+                    if (target === 'music-screen' || target === 'diary-screen' || target === 'piggy-bank-screen') {
                         showToast('该应用正在开发中，敬请期待！');
                         return;
                     }
@@ -2685,15 +2171,6 @@ ${envInfo}
             setupInsWidgetAvatarModal();
             setupHeartPhotoModal();
             setupPeekCharacterSelectScreen(); // <-- 新增
-            setupDiaryApp(); // ▼▼▼ 新增：初始化交换日记功能 ▼▼▼
-
-            // ▼▼▼ 启动后台系统 ▼▼▼
-            startBackgroundHeartbeat();
-
-            // 请求通知权限 (为了后台消息通知)
-            if ("Notification" in window && Notification.permission !== "granted") {
-                Notification.requestPermission();
-            }
         };
 
         function setupInsWidgetAvatarModal() {
@@ -3834,7 +3311,7 @@ ${envInfo}
             conversations.forEach((convo) => {
                 const history = convo.history || [];
                 const lastMessage = history.length > 0 ? history[history.length - 1] : null;
-                const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/, '$1') : '...';
+                const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息(?:：|:)([\s\S]+)\]/, '$1') : '...';
                 
                 const li = document.createElement('li');
                 li.className = 'list-item chat-item';
@@ -5967,19 +5444,19 @@ detailModal.classList.remove('visible');
             sortedChats.forEach(chat => {
                 let lastMessageText = '开始聊天吧...';
                 if (chat.history && chat.history.length > 0) {
-                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为\s*(?:：|:)\s*.*?\]|\[system-display:.*?\]/;
+                    const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
                     const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
                     if (visibleHistory.length > 0) {
                         const lastMsg = visibleHistory[visibleHistory.length - 1];
                         const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-                        const imageRecogRegex = /\[.*?发来了一张图片\s*(?:：|:)\s*\]/
-                        const voiceRegex = /\[.*?的语音\s*(?:：|:)\s*.*?\]/;
-                        const photoVideoRegex = /\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/;
-                        const transferRegex = /\[.*?的转账\s*(?:：|:)\s*.*?元.*?\]|\[.*?给你转账\s*(?:：|:)\s*.*?元.*?\]|\[.*?向.*?转账\s*(?:：|:)\s*.*?元.*?\]/;
-                        const stickerRegex = /\[.*?的表情包\s*(?:：|:)\s*.*?\]|\[.*?发送的表情包\s*(?:：|:)\s*.*?\]/;
-                        const giftRegex = /\[.*?送来的礼物\s*(?:：|:)\s*.*?\]|\[.*?向.*?送来了礼物\s*(?:：|:)\s*.*?\]/;
+                        const imageRecogRegex = /\[.*?发来了一张图片(?:：|:)\]/
+                        const voiceRegex = /\[.*?的语音(?:：|:).*?\]/;
+                        const photoVideoRegex = /\[.*?发来的照片\/视频(?:：|:).*?\]/;
+                        const transferRegex = /\[.*?的转账(?:：|:).*?元.*?\]|\[.*?给你转账(?:：|:).*?元.*?\]|\[.*?向.*?转账(?:：|:).*?元.*?\]/;
+                        const stickerRegex = /\[.*?的表情包(?:：|:).*?\]|\[.*?发送的表情包(?:：|:).*?\]/;
+                        const giftRegex = /\[.*?送来的礼物(?:：|:).*?\]|\[.*?向.*?送来了礼物(?:：|:).*?\]/;
                         // ▼▼▼ 新增 NAI 预览规则 ▼▼▼
-                        const naiRegex = /\[.*?的消息\s*(?:：|:)\s*NAI 正在作画中... 🎨\]/;
+                        const naiRegex = /\[.*?的消息(?:：|:)NAI 正在作画中... 🎨\]/;
                         // ▲▲▲ 新增结束 ▲▲▲
 
                         if (giftRegex.test(lastMsg.content)) {
@@ -6003,7 +5480,7 @@ detailModal.classList.remove('visible');
                         }else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) {
                             lastMessageText = '[互动]';
                         } else {
-                            const textMatch = lastMsg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
+                            const textMatch = lastMsg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
                             // ...
 let text = lastMsg.content.trim();
 const plainTextMatch = text.match(/^\[.*?(?:：|:)([\s\S]*)\]$/);
@@ -6021,7 +5498,7 @@ if (htmlRegex.test(text)) {
                     } else {
                         const lastEverMsg = chat.history[chat.history.length - 1];
                         const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
-                        const renameRegex = /\[.*?修改群名为\s*(?:：|:)\s*.*?\]/;
+                        const renameRegex = /\[.*?修改群名为：.*?\]/;
                         const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
                         const timeSkipMatch = lastEverMsg.content.match(timeSkipRegex);
 
@@ -6126,15 +5603,21 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         // ==========================================
         // Minimax 语音合成核心函数
         // ==========================================
-        async function playMinimaxAudio(text, charVoiceId, btnElement, options = {}) {
+        async function playMinimaxAudio(text, charVoiceId, btnElement) {
             console.log('[Minimax] 准备播放语音:', text);
-
+            
             const settings = db.apiSettings;
-            if (!settings || !settings.minimaxGroupId || !settings.minimaxApiKey) {
+            // 检查 API 设置中的开关
+            if (!settings || !settings.minimaxEnabled) {
+                showToast('请先在API设置中启用 Minimax 语音合成');
+                return;
+            }
+            
+            if (!settings.minimaxGroupId || !settings.minimaxApiKey) {
                 showToast('请先在API设置中配置 Minimax Group ID 和 Key');
                 return;
             }
-
+            
             if (!charVoiceId) {
                 showToast('该角色未配置 Voice ID，请在聊天设置中添加');
                 return;
@@ -6142,34 +5625,21 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
             // 显示加载状态
             if(btnElement) {
-                btnElement.classList.add('loading');
+                btnElement.classList.add('loading'); // 假设你有loading样式，或者让图标变色
                 btnElement.style.opacity = '0.5';
             }
 
             const model = settings.minimaxModel || 'speech-01';
             const url = `https://api.minimax.chat/v1/text_to_speech?GroupId=${settings.minimaxGroupId}`;
-
-            // 构建请求体
+            
             const requestBody = {
                 voice_id: charVoiceId,
                 text: text,
                 model: model
             };
 
-            // 如果选择了特定语言（非 auto），则添加到 payload
-            // 注意：不同版本的 Minimax 模型对 language 参数的处理不同，
-            // 有些放在 voice_setting 里，有些直接放在外面。这里尝试通用做法。
-            if (options.language && options.language !== 'auto') {
-                // 针对 Speech-02 (T2A) 等新模型，通常支持 voice_setting
-                requestBody.voice_setting = {
-                    language: options.language
-                };
-                // 为了兼容性，也可以尝试在顶层加一个（虽然标准文档是 voice_setting）
-                // requestBody.language = options.language;
-            }
-
             try {
-                console.log('[Minimax] 发起请求...', requestBody);
+                console.log('[Minimax] 发起请求...');
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: {
@@ -6188,14 +5658,14 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 const audioBlob = await response.blob();
                 const audioUrl = URL.createObjectURL(audioBlob);
                 const audio = new Audio(audioUrl);
-
+                
                 audio.onended = () => {
                     URL.revokeObjectURL(audioUrl); // 释放内存
                     if(btnElement) {
                         btnElement.classList.remove('playing'); // 移除播放状态样式
                     }
                 };
-
+                
                 audio.play();
                 if(btnElement) {
                     btnElement.classList.add('playing');
@@ -6283,47 +5753,50 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 } else {
                     const voiceBubble = e.target.closest('.voice-bubble');
                     if (voiceBubble) {
+                        // 1. 获取点击的具体元素，判断是否是播放图标区域
+                        // 我们约定点击整个气泡都尝试播放，或者展开文字
+                        // 为了体验更好，我们优先播放，如果长按或者点击文字区域再展开（这里简化为点击播放，同时展开文字）
+                        
                         const wrapper = voiceBubble.closest('.message-wrapper');
                         const messageId = wrapper.dataset.id;
                         const transcript = wrapper.querySelector('.voice-transcript');
-
+                        
                         // 查找当前消息对象
                         const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
                         const message = chat.history.find(m => m.id === messageId);
-
+                        
                         if (message) {
-                            // 解析语音文字内容 - 兼容中英文冒号及空格
-                            const voiceRegex = /\[(?:.+?)的语音\s*(?:：|:)\s*([\s\S]+?)\]/;
+                            // 解析语音文字内容
+                            const voiceRegex = /\[(?:.+?)的语音(?:：|:)([\s\S]+?)\]/;
                             const match = message.content.match(voiceRegex);
                             const voiceText = match ? match[1].trim() : '';
-
+                            
                             // 判断是谁的消息
                             let voiceId = null;
-                            let isVoiceEnabled = true; // 默认开启
-                            let voiceLang = 'auto';    // 默认自动
-
+                            let voiceEnabled = false;
                             if (message.role === 'assistant') {
                                 if (currentChatType === 'private') {
                                     voiceId = chat.minimaxVoiceId;
-                                    // 读取角色的语音设置 (注意检查 undefined，默认为 true)
-                                    isVoiceEnabled = (chat.minimaxEnabled !== false);
-                                    voiceLang = chat.minimaxLang || 'auto';
+                                    voiceEnabled = chat.minimaxVoiceEnabled || false;
                                 } else {
-                                    // 群聊暂不支持
+                                    // 群聊暂不支持单独语音ID，或者您可以从 member 中获取
+                                    // 简单起见，如果是群聊，暂不播放或提示不支持
+                                    const sender = chat.members.find(m => m.id === message.senderId);
+                                    // 如果您在群成员数据结构里也加了 minimaxVoiceId，这里就能获取
                                 }
                             }
 
-                            // 逻辑判断：语音播放
-                            if (message.role === 'assistant') {
-                                if (isVoiceEnabled && voiceId && voiceText) {
-                                    // 只有在启用且有 ID 的情况下才播放
-                                    playMinimaxAudio(voiceText, voiceId, voiceBubble.querySelector('.play-icon'), { language: voiceLang });
-                                }
-                                // 其他情况（关闭、缺ID、无文字）都无声无息忽略
+                            // 只有 AI 发送的消息且配置了 VoiceID 且启用了语音合成才尝试播放
+                            if (message.role === 'assistant' && voiceEnabled && voiceId && voiceText) {
+                                playMinimaxAudio(voiceText, voiceId, voiceBubble.querySelector('.play-icon'));
+                            } else if (message.role === 'assistant' && !voiceEnabled) {
+                                showToast('该角色未启用语音合成功能');
+                            } else if (message.role === 'assistant' && !voiceId) {
+                                showToast('该角色未设置 Minimax Voice ID，无法播放');
                             }
                         }
 
-                        // 展开文字逻辑：无论语音是否启用，都要能看到文字
+                        // 原有的展开文字逻辑保持不变
                         if (transcript) {
                             transcript.classList.toggle('active');
                         }
@@ -6403,12 +5876,12 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             if (!message) return;
 
             const isImageRecognitionMsg = message.parts && message.parts.some(p => p.type === 'image');
-            const isVoiceMessage = /\[.*?的语音\s*(?:：|:).*?\]/.test(message.content);
-            const isStickerMessage = /\[.*?的表情包\s*(?:：|:)\s*.*?\]|\[.*?发送的表情包\s*(?:：|:)\s*.*?\]/.test(message.content);
-            const isPhotoVideoMessage = /\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(message.content);
-            const isTransferMessage = /\[.*?给你转账\s*(?:：|:)\s*.*?\]|\[.*?的转账\s*(?:：|:)\s*.*?\]|\[.*?向.*?转账\s*(?:：|:)\s*.*?\]/.test(message.content);
-            const isGiftMessage = /\[.*?送来的礼物\s*(?:：|:)\s*.*?\]|\[.*?向.*?送来了礼物\s*(?:：|:)\s*.*?\]/.test(message.content);
-            const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为\s*(?:：|:)\s*.*?\]|\[system-display:.*?\]/.test(message.content);
+            const isVoiceMessage = /\[.*?的语音(?:：|:).*?\]/.test(message.content);
+            const isStickerMessage = /\[.*?的表情包(?:：|:).*?\]|\[.*?发送的表情包(?:：|:).*?\]/.test(message.content);
+            const isPhotoVideoMessage = /\[.*?发来的照片\/视频(?:：|:).*?\]/.test(message.content);
+            const isTransferMessage = /\[.*?给你转账(?:：|:).*?\]|\[.*?的转账(?:：|:).*?\]|\[.*?向.*?转账(?:：|:).*?\]/.test(message.content);
+            const isGiftMessage = /\[.*?送来的礼物(?:：|:).*?\]|\[.*?向.*?送来了礼物(?:：|:).*?\]/.test(message.content);
+            const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/.test(message.content);
             const isWithdrawn = message.isWithdrawn; // 新增：检查消息是否已撤回
 
             let menuItems = [];
@@ -6500,14 +5973,14 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
         
         // 提取纯文本内容用于预览
         let previewContent = message.content;
-        const textMatch = message.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
+        const textMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
         if (textMatch) {
             previewContent = textMatch[1];
-        } else if (/\[.*?的表情包\s*(?:：|:)\s*.*?\]/.test(message.content)) {
+        } else if (/\[.*?的表情包(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[表情包]';
-        } else if (/\[.*?的语音\s*(?:：|:).*?\]/.test(message.content)) {
+        } else if (/\[.*?的语音(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[语音]';
-        } else if (/\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(message.content)) {
+        } else if (/\[.*?发来的照片\/视频(?:：|:).*?\]/.test(message.content)) {
             previewContent = '[照片/视频]';
         } else if (message.parts && message.parts.some(p => p.type === 'image')) {
             previewContent = '[图片]';
@@ -6695,7 +6168,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             } else {
                 // --- 原始：普通文本消息的保存逻辑 ---
                 const oldContent = message.content;
-                const prefixMatch = oldContent.match(/(\[.*?的消息\s*(?:：|:)\s*)[\s\S]+\]/);
+                const prefixMatch = oldContent.match(/(\[.*?的消息(?:：|:))[\s\S]+\]/);
                 let finalContent;
 
                 if (prefixMatch && prefixMatch[1]) {
@@ -6876,7 +6349,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     <div>
                         <span class="withdrawn-message">${withdrawnText}</span>
                     </div>
-                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/, '$1')) : ''}</div>
+                    <div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')) : ''}</div>
                 `;
 
                 const withdrawnMessageSpan = wrapper.querySelector('.withdrawn-message');
@@ -6893,12 +6366,12 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
             const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
             const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
-            const renameRegex = /\[(.*?)修改群名为\s*(?:：|:)\s*(.*?)\]/;
+            const renameRegex = /\[(.*?)修改群名为：(.*?)\]/;
             const timeSkipMatch = content.match(timeSkipRegex);
             const inviteMatch = content.match(inviteRegex);
             const renameMatch = content.match(renameRegex);
             // 修复：增加了 (?:：|:) 来兼容中文和英文冒号，确保状态更新能被正确识别和隐藏
-            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
+            const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[系统情景通知：.*?\]/;
             if (invisibleRegex.test(content)) {
                 return null;
             }
@@ -6947,17 +6420,17 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
             // Regexes for all message types
             const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-            const sentStickerRegex = /\[(?:.+?)的表情包\s*(?:：|:)\s*.+?\]/i;
-            const receivedStickerRegex = /\[(?:.+?)发送的表情包\s*(?:：|:)\s*([\s\S]+?)\]/i;
-            const voiceRegex = /\[(?:.+?)的语音\s*(?:：|:)\s*([\s\S]+?)\]/;
-            const photoVideoRegex = /\[(?:.+?)发来的照片\/视频\s*(?:：|:)\s*([\s\S]+?)\]/;
-            const privateSentTransferRegex = /\[.*?给你转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
-            const privateReceivedTransferRegex = /\[.*?的转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
-            const groupTransferRegex = /\[(.*?)\s*向\s*(.*?)\s*转账\s*(?:：|:)\s*([\d.]+)元；备注：(.*?)\]/;
-            const privateGiftRegex = /\[(?:.+?)送来的礼物\s*(?:：|:)\s*([\s\S]+?)\]/;
-            const groupGiftRegex = /\[(.*?)\s*向\s*(.*?)\s*送来了礼物\s*(?:：|:)\s*([\s\S]+?)\]/;
-            const imageRecogRegex = /\[.*?发来了一张图片\s*(?:：|:)\s*\]/;
-            const textRegex = /\[(?:.+?)的消息\s*(?:：|:)\s*([\s\S]+)\]/; // 修复：移除了第二个 [\s\S]+? 中的 ?，使其变为贪婪匹配
+            const sentStickerRegex = /\[(?:.+?)的表情包(?:：|:).+?\]/i;
+            const receivedStickerRegex = /\[(?:.+?)发送的表情包(?:：|:)([\s\S]+?)\]/i;
+            const voiceRegex = /\[(?:.+?)的语音(?:：|:)([\s\S]+?)\]/;
+            const photoVideoRegex = /\[(?:.+?)发来的照片\/视频(?:：|:)([\s\S]+?)\]/;
+            const privateSentTransferRegex = /\[.*?给你转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
+            const privateReceivedTransferRegex = /\[.*?的转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
+            const groupTransferRegex = /\[(.*?)\s*向\s*(.*?)\s*转账(?:：|:)([\d.]+)元；备注：(.*?)\]/;
+            const privateGiftRegex = /\[(?:.+?)送来的礼物(?:：|:)([\s\S]+?)\]/;
+            const groupGiftRegex = /\[(.*?)\s*向\s*(.*?)\s*送来了礼物(?:：|:)([\s\S]+?)\]/;
+            const imageRecogRegex = /\[.*?发来了一张图片(?:：|:)\]/;
+            const textRegex = /\[(?:.+?)的消息(?:：|:)([\s\S]+)\]/; // 修复：移除了第二个 [\s\S]+? 中的 ?，使其变为贪婪匹配
 
             const sentStickerMatch = content.match(sentStickerRegex);
             const receivedStickerMatch = content.match(receivedStickerRegex);
@@ -7315,7 +6788,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                 if (senderChat) {
         // --- 从这里开始是新增的代码 ---
         // 如果消息不是系统内部不可见的消息，才增加未读计数
-                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为\s*(?:：|:)\s*.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
+                    const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为(?:：|:).*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
                     if (!invisibleRegex.test(message.content)) {
                         senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
                         saveData(); // 保存数据
@@ -7341,17 +6814,17 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
                     let previewText = message.content;
 
                     // Extract clean text for preview
-                    const textMatch = previewText.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
+                    const textMatch = previewText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
                     if (textMatch) {
                         previewText = textMatch[1];
                     } else {
                         // Handle other message types for preview
-                        if (/\[.*?的表情包\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[表情包]';
-                        else if (/\[.*?的语音\s*(?:：|:).*?\]/.test(previewText)) previewText = '[语音]';
-                        else if (/\[.*?发来的照片\/视频\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[照片/视频]';
-                        else if (/\[.*?的转账\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[转账]';
-                        else if (/\[.*?送来的礼物\s*(?:：|:)\s*.*?\]/.test(previewText)) previewText = '[礼物]';
-                        else if (/\[.*?发来了一张图片\s*(?:：|:)\s*\]/.test(previewText)) previewText = '[图片]';
+                        if (/\[.*?的表情包(?:：|:).*?\]/.test(previewText)) previewText = '[表情包]';
+                        else if (/\[.*?的语音(?:：|:).*?\]/.test(previewText)) previewText = '[语音]';
+                        else if (/\[.*?发来的照片\/视频(?:：|:).*?\]/.test(previewText)) previewText = '[照片/视频]';
+                        else if (/\[.*?的转账(?:：|:).*?\]/.test(previewText)) previewText = '[转账]';
+                        else if (/\[.*?送来的礼物(?:：|:).*?\]/.test(previewText)) previewText = '[礼物]';
+                        else if (/\[.*?发来了一张图片(?:：|:)\]/.test(previewText)) previewText = '[图片]';
                         else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
                     }
                     
@@ -7367,7 +6840,7 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             // --- Original logic for when the chat is active ---
             if (currentChatType === 'private') {
                 const character = db.characters.find(c => c.id === currentChatId);
-                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为\s*(?:：|:)\s*(.*?)\\]`);
+                const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为(?:：|:)(.*?)\\]`);
                 const transferActionRegex = new RegExp(`\\[${character.realName}(接收|退回)${character.myName}的转账\\]`);
                 const giftReceivedRegex = new RegExp(`\\[${character.realName}已接收礼物\\]`);
                 
@@ -7585,43 +7058,15 @@ if (db.apiSettings && db.apiSettings.timePerceptionEnabled) {
 let messageContent;
 const systemRegex = /\[system:.*?\]|\[system-display:.*?\]/;
 const inviteRegex = /\[.*?邀请.*?加入群聊\]/;
-const renameRegex = /\[(.*?)修改群名为"(.*?)"\]/;
-
-// ▼▼▼ 新增：用户修改群昵称的正则 (兼容中英文冒号，支持带引号或不带) ▼▼▼
-const userRenameSelfGroupRegex = /^我修改我的群昵称为\s*(?:：|:)\s*[""']?(.*?)[""']?$/;
-// ▲▲▲ 新增结束 ▲▲▲
-
+const renameRegex = /\[(.*?)修改群名为“(.*?)”\]/;
 const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
 
 if (renameRegex.test(text)) {
     const match = text.match(renameRegex);
     chat.name = match[2];
     chatRoomTitle.textContent = chat.name;
-    messageContent = `[${chat.me.nickname}修改群名为"${chat.name}"]`;
-}
-// ▼▼▼ 新增：处理用户改自己的群昵称 ▼▼▼
-else if (currentChatType === 'group' && userRenameSelfGroupRegex.test(text)) {
-    const match = text.match(userRenameSelfGroupRegex);
-    const newNickname = match[1];
-    const oldNickname = chat.me.nickname;
-
-    // 更新数据
-    chat.me.nickname = newNickname;
-
-    // 构造系统消息
-    messageContent = `[${oldNickname}修改我的群昵称为"${newNickname}"]`;
-
-    // 保存更改
-    await saveData();
-
-    // 如果侧边栏开着，刷新一下设置界面
-    const groupSettingsSidebar = document.getElementById('group-settings-sidebar');
-    if (groupSettingsSidebar.classList.contains('open')) {
-        document.getElementById('setting-group-my-nickname').value = newNickname;
-    }
-}
-// ▲▲▲ 新增结束 ▲▲▲
-else if (systemRegex.test(text) || inviteRegex.test(text)) {
+    messageContent = `[${chat.me.nickname}修改群名为“${chat.name}”]`;
+} else if (systemRegex.test(text) || inviteRegex.test(text)) {
     messageContent = text;
 } else {
     let userText = text;
@@ -7686,7 +7131,7 @@ async function withdrawMessage(messageId) {
     message.isWithdrawn = true;
 
     // 提取干净的原始内容用于AI上下文和UI的“重新编辑”
-    const cleanContentMatch = message.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
+    const cleanContentMatch = message.content.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
     const cleanOriginalContent = cleanContentMatch ? cleanContentMatch[1] : message.content;
     message.originalContent = cleanOriginalContent; // 保存干净的原始内容
 
@@ -8038,7 +7483,7 @@ return `${seconds}秒`;
                 if (totalToDelete <= 4) {
                     // If 4 or fewer messages, show all of them
                     previewHtml = messagesToDelete.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
@@ -8048,13 +7493,13 @@ return `${seconds}秒`;
                     const lastTwo = messagesToDelete.slice(-2);
 
                     const firstTwoHtml = firstTwo.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
 
                     const lastTwoHtml = lastTwo.map(msg => {
-                        const contentMatch = msg.content.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+)\]/);
+                        const contentMatch = msg.content.match(/\[.*?的消息(?:：|:)([\s\S]+)\]/);
                         const text = contentMatch ? contentMatch[1] : msg.content;
                         return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
                     }).join('');
@@ -8089,61 +7534,10 @@ return `${seconds}秒`;
 
   
         // --- AI Interaction & Prompts ---
-        async function generatePrivateSystemPrompt(character, worldBooksBefore = '', worldBooksAfter = '') {
+        function generatePrivateSystemPrompt(character, worldBooksBefore = '', worldBooksAfter = '') {
             const now = new Date();
             const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-            // =================================================
-            // 🌍 [核心] 智能环境感知 Prompt (优化版：整数温度 + 合理化知情逻辑)
-            // =================================================
-            let envContextPrompt = "";
-            
-            if (character.envAwarenessEnabled) {
-                try {
-                    const uCity = character.userCityObj;
-                    const aCity = character.aiCityObj;
-                    
-                    if (uCity || aCity) {
-                        // console.log('[Env] 准备注入环境数据...'); // 可选日志
-                        
-                        let userEnvStr = "位置未知";
-                        let aiEnvStr = "位置未知";
-
-                        // User Side
-                        if (uCity && uCity.lat) {
-                            const time = WeatherService.getLocalTime(uCity);
-                            const weather = await WeatherService.fetchWeather(uCity);
-                            // ⬇️ 修改点1：使用 Math.round() 强制四舍五入取整
-                            const wStr = weather ? `${weather.desc}, ${Math.round(weather.temp)}°C` : "天气查询中";
-                            userEnvStr = `${uCity.displayName} | 时间:${time} | ${wStr}`;
-                        }
-
-                        // AI Side
-                        if (aCity && aCity.lat) {
-                            const time = WeatherService.getLocalTime(aCity);
-                            const weather = await WeatherService.fetchWeather(aCity);
-                            // ⬇️ 修改点2：使用 Math.round() 强制四舍五入取整
-                            const wStr = weather ? `${weather.desc}, ${Math.round(weather.temp)}°C` : "天气查询中";
-                            aiEnvStr = `${aCity.displayName} | 时间:${time} | ${wStr}`;
-                        }
-
-                        // ⬇️ 修改点3：重写提示词，增加"合理化知情"的约束
-                        envContextPrompt = `
-【🌍 环境信息同步】
-（请根据当前时空环境调整你的对话语境。你可以感知到自己的环境信息和双方时差，也可以通过查询了解到对方城市的天气、温度）
-👤 用户(User) 现状: [ ${userEnvStr} ]
-🤖 你(Char) 现状: [ ${aiEnvStr} ]
-
-📢 **关于天气与时间的对话规则 (极其重要)**：
-1. **拒绝全知视角**：如果异地，那么你**并不默认知道**用户那边的天气。除非你主动查询了用户那边的天气预报。
-2. **口语化数值**：提到气温时，**严禁带小数点**。请直接说整数（如"3度"而不是"2.7度"）或者一个大概的天气（如"十几二十度"吧），符合真人口语习惯。
-(请利用这些信息制造自然的话题，比如异地的时差感慨、因天气变冷而产生的关心等。注意时差和天气对心情或行为的影响)
-`;
-                    }
-                } catch (err) { console.error('[Env] Error:', err); }
-            }
-
-            let prompt = envContextPrompt + `你正在一个名为"404"的线上聊天软件中扮演一个角色。请严格按照以下规则：\n`;
+            let prompt = `你正在一个名为“404”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
             prompt += `核心规则：\n`;
             prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
             prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
@@ -8156,41 +7550,12 @@ return `${seconds}秒`;
             if (favoritedJournals) {
                 prompt += `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
             }
-
-            // ▼▼▼ 新增：注入交换日记记忆 (同步到聊天) ▼▼▼
-            // 1. 筛选出与当前角色互换过的日记 (状态为 replied 且 replyCharId 匹配)
-            // 2. 为了节省Token，只取最近的 3 篇，且对内容进行适度截断
-            const exchangeDiaryMemories = (db.diaries || [])
-                .filter(d => d.exchangeStatus === 'replied' && d.replyCharId === character.id)
-                .sort((a, b) => a.timestamp - b.timestamp) // 按时间升序，旧 -> 新
-                .slice(-3) // 取最近3篇
-                .map(d => {
-                    // 移除HTML标签，只保留纯文本，并截取前100字
-                    const cleanUserText = d.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').substring(0, 100);
-                    const cleanReplyText = d.replyContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').substring(0, 100);
-                    const dateStr = new Date(d.timestamp).toLocaleDateString();
-                    return `[${dateStr} 的交换日记]\n你收到的(我)："${cleanUserText}..."\n你的回信(你)："${cleanReplyText}..."`;
-                })
-                .join('\n\n');
-
-            if (exchangeDiaryMemories) {
-                prompt += `【交换日记回忆】\n这是我们最近互换过的私密日记，记载了我们更深层的心声，你在聊天中应当记得这些内容：\n${exchangeDiaryMemories}\n\n`;
-            }
-            // ▲▲▲ 新增结束 ▲▲▲
-
+            
             prompt += `角色和对话规则：\n`;
             if (worldBooksBefore) {
                 prompt += `${worldBooksBefore}\n`;
             }
-
-            // ▼▼▼ 修改：注入用户本名 ▼▼▼
-            const myRealNameInfo = character.myRealName ? ` (我的真名是：${character.myRealName})` : "";
-            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}${myRealNameInfo}。你的当前状态是：${character.status}。\n`;
-            if (character.myRealName) {
-                prompt += `   - **认知锁**：无论我的昵称(备注)如何变化，你都要记住我的真名是【${character.myRealName}】。昵称只是暂时的代号。\n`;
-            }
-            // ▲▲▲ 修改结束 ▲▲▲
-
+            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status}。\n`;
             prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
             if (worldBooksAfter) {
                 prompt += `${worldBooksAfter}\n`;
@@ -8213,7 +7578,7 @@ return `${seconds}秒`;
     a) 接收转账: [${character.realName}接收${character.myName}的转账]
     b) 退回转账: [${character.realName}退回${character.myName}的转账]
 7. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。
-8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为\s*(?:：|:)\s*xxx]。例如：[${character.realName}更新状态为\s*(?:：|:)\s*正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
+8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
 9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
 10. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
 11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
@@ -8229,7 +7594,7 @@ return `${seconds}秒`;
     f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
     g) 对我礼物的回应(此条不显示): [${character.realName}已接收礼物]
     h) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
-    i) 更新状态(此条不显示): [${character.realName}更新状态为\s*(?:：|:)\s*{新状态}]
+    i) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
     j) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
     k) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]`;
 
@@ -8289,158 +7654,6 @@ ${DOMPurify.sanitize(m.content)}
             return prompt;
         }
 
-        // ---------- 新版环境感知提示（用于替换旧版） ----------
-        // 名称：generatePrivateSystemPrompt_v2
-        // 说明：保留旧的 generatePrivateSystemPrompt 以防兼容性问题，
-        //      新的调用点会切换到这个函数。
-        async function generatePrivateSystemPrompt_v2(character, worldBooksBefore = '', worldBooksAfter = '') {
-            const now = new Date();
-            const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-            let envContextPrompt = "";
-            if (character.envAwarenessEnabled) {
-                try {
-                    const uCity = character.userCityObj;
-                    const aCity = character.aiCityObj;
-
-                    if (uCity || aCity) {
-                        let userEnvInfo = "位置未知";
-                        let aiEnvInfo = "位置未知";
-                        let userTemp = "";
-                        let aiTemp = "";
-
-                        let isSameCity = false;
-                        if (uCity && aCity && uCity.name && aCity.name) {
-                            isSameCity = (uCity.name === aCity.name);
-                        }
-
-                        if (uCity && uCity.lat) {
-                            const time = WeatherService.getLocalTime(uCity);
-                            const weather = await WeatherService.fetchWeather(uCity);
-                            if (weather) {
-                                const tempInt = Math.round(weather.temp);
-                                userTemp = `${tempInt}度`;
-                                userEnvInfo = `地点:${uCity.displayName} | 时间:${time} | 天气:${weather.desc}, 气温:${tempInt}°C`;
-                            }
-                        }
-
-                        if (aCity && aCity.lat) {
-                            const time = WeatherService.getLocalTime(aCity);
-                            const weather = await WeatherService.fetchWeather(aCity);
-                            if (weather) {
-                                const tempInt = Math.round(weather.temp);
-                                aiTemp = `${tempInt}度`;
-                                aiEnvInfo = `地点:${aCity.displayName} | 时间:${time} | 天气:${weather.desc}, 气温:${tempInt}°C`;
-                            }
-                        }
-
-                        let relationLogic = "";
-                        if (isSameCity) {
-                            relationLogic = `\n   - **同城状态**：你们在同一个城市。你**天然知道**用户外面的天气和温度（和你一样）。\n   - 你可以自然地评论现在的天气（如“外面好冷啊”），而不需要“查询”。`;
-                        } else {
-                            relationLogic = `\n   - **异地状态**：你们不在同一个城市。你**默认不知道**用户那边的天气。\n   - **获取方式**：如果你想聊用户及其天气，必须通过**询问**（“你那冷吗？”）或**口头说明查询动作**（“我刚特意查了下...”）来切入.`;
-                        }
-
-                                // ⬇️ 修复：去掉了内部冲突的反引号，改为直接显示括号
-                                envContextPrompt = `
-【🌍 系统后台环境数据 (客观事实)】
-👤 用户(User) 现状: [ ${userEnvInfo} ]
-🤖 你(Char) 现状: [ ${aiEnvInfo} ]
-
-📢 **环境与时差的拟人化认知规则 (必须严格执行)**：
-
-1. **时差常识**：你天然知道双方的时差，无需查询即可直接调侃作息差异（如“你那里都半夜了吧”）。
-2. **地理关系**：${relationLogic}
-3. **己方气温**：
-    - 你的第一反应必须是**体感**（好冷、冻手、闷热、舒服）。
-    - 只有在**被问及**或**为了佐证体感**时，才提及具体数字（如“我这也才${aiTemp}”），但这隐含了你刚刚确认过天气信息的行为。
-4. **纯对话模式**：
-    - **严禁**使用括号或星号描写动作（如❌ (看手机)、❌ *查天气*）。
-    - 所有的“查询动作”都必须**融入到口语中**。不要说“我正在查天气”，而是直接说出查询后的结果和感慨。
-5. **数值铁律**：提及气温必须**四舍五入取整**（如“3度”），**严禁**出现小数点！
-6. **创造性指令**：请根据当前对话的语境，用**你自己（角色）的说话风格**来表达上述信息，**绝对禁止**机械复制“我看了一眼天气预报”这种固定句式，要说得自然生动。
-`;
-                    }
-                } catch (err) { console.error('[Env] Error:', err); }
-            }
-
-            let prompt = envContextPrompt + `你正在一个名为"404"的线上聊天软件中扮演一个角色。请严格按照以下规则：\n`;
-            prompt += `核心规则：\n`;
-            prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
-            prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
-
-            const favoritedJournals = (character.memoryJournals || []).filter(j => j.isFavorited).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
-            if (favoritedJournals) {
-                prompt += `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
-            }
-
-            prompt += `角色和对话规则：\n`;
-            if (worldBooksBefore) prompt += `${worldBooksBefore}\n`;
-
-            // ▼▼▼ 修改：注入用户本名 ▼▼▼
-            const myRealNameInfo = character.myRealName ? ` (我的真名是：${character.myRealName})` : "";
-            prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}${myRealNameInfo}。你的当前状态是：${character.status}。\n`;
-            if (character.myRealName) {
-                prompt += `   - **认知锁**：无论我的昵称(备注)如何变化，你都要记住我的真名是【${character.myRealName}】。昵称只是暂时的代号。\n`;
-            }
-            // ▲▲▲ 修改结束 ▲▲▲
-
-            prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
-            if (worldBooksAfter) prompt += `${worldBooksAfter}\n`;
-            if (character.myPersona) prompt += `3. 关于我的人设：${character.myPersona}\n`;
-
-            prompt += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：\n`;
-            prompt += `    - [${character.myName}的表情包：xxx]：我给你发送了一个名为xxx的表情包。你只需要根据表情包的名字理解我的情绪或意图并回应，不需要真的发送图片。\n`;
-            prompt += `    - [${character.myName}发来了一张图片：]：我给你发送了一张图片，你需要对图片内容做出回应。\n`;
-            prompt += `    - [${character.myName}送来的礼物：xxx]：我给你送了一个礼物，xxx是礼物的描述。\n`;
-            prompt += `    - [${character.myName}的语音：xxx]：我给你发送了一段内容为xxx的语音。\n`;
-            prompt += `    - [${character.myName}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。\n`;
-            prompt += `    - [${character.myName}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。\n`;
-            prompt += `    - [${character.myName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。\n`;
-            prompt += `    - [${character.myName} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。\n`;
-            prompt += `    - [system: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。\n`;
-
-            prompt += `5. ✨重要✨ 当我给你送礼物时，你必须通过发送一条指令来表示你已接收礼物。格式必须为：[${character.realName}已接收礼物]。这条指令消息本身不会显示给用户，但会触发礼物状态的变化。\n`;
-            prompt += `6. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择：\n    a) 接收转账: [${character.realName}接收${character.myName}的转账]\n    b) 退回转账: [${character.realName}退回${character.myName}的转账]\n`;
-            prompt += `7. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。\n`;
-            prompt += `8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。格式为：[${character.realName}更新状态为\\s*(?:：|:)\\s*{新状态}]。\n`;
-            prompt += `9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。\n`;
-            prompt += `10. ✨重要✨ 你可以引用我的单条消息并回复：格式为：[${character.myName}引用“{我的某条消息内容}”并回复：{回复内容}]。\n`;
-            prompt += `11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等在括号或星号里的叙述性文本。\n`;
-
-            // ▼▼▼ 新增：私聊改备注规则 ▼▼▼
-            prompt += `12. ✨重要✨ 你可以修改自己的备注或者我对你的备注。这通常发生在关系变化或我想给你起昵称时。\n    - 修改你自己的备注: [${character.realName}修改自己的备注为：{新备注}]\n    - 修改用户(我)的备注: [${character.realName}修改你的备注为：{新备注}]\n`;
-            // ▲▲▲ 新增结束 ▲▲▲
-
-            prompt += `13. 你拥有发送表情包的能力。格式为：[${character.realName}发送的表情包：图片URL]。\n`;
-
-            let outputFormats = `\n    a) 普通消息: [${character.realName}的消息：{消息内容}]\n    b) 送我的礼物: [${character.realName}送来的礼物：{礼物描述}]\n    c) 语音消息: [${character.realName}的语音：{语音内容}]\n    d) 照片/视频: [${character.realName}发来的照片/视频：{描述}]\n    e) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]\n    f) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]\n    g) 修改备注(指令): [${character.realName}修改自己的备注为：{新备注}] 或 [${character.realName}修改你的备注为：{新备注}]\n`;
-
-            const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
-            if (allWorldBookContent.includes('<orange>')) {
-                outputFormats += `\n     l) HTML模块: [HTML: {HTML内容}]。这是一种特殊的、用于展示丰富样式的小卡片消息，格式必须为纯HTML+行内CSS。`;
-            }
-
-            prompt += `13. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
-
-            if (localStorage.getItem('novelai-enabled') === 'true') {
-                const currentModuleIds = new Set(character.naiModuleIds || []);
-                const loadedModules = (db.naiPromptModules || []).filter(m => currentModuleIds.has(m.id));
-
-                if (loadedModules.length > 0) {
-                    prompt += `\n13.5. **(可选) NAI 模块手册**:\n...（模块手册内容略）\n`;
-                } else {
-                    prompt += `\n13.5. **(可选) NAI 模块手册**: (你当前没有可用的提示词模块)\n`;
-                }
-
-                prompt += `\n13.6. **(可选) NovelAI真实图片分享**:\n* **格式**: [NAI: {"prompt": "你生成的最终Prompt..."}]\n`;
-            }
-
-            prompt += `14. **对话节奏**: 你需要模拟真人的聊天习惯，你可以一次性生成多条短消息。每次要回复至少3-8条消息。\n`;
-            prompt += `15. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
-            return prompt;
-        }
-
         function generateGroupSystemPrompt(group, worldBooksBefore = '', worldBooksAfter = '') {
 
             let prompt = `你正在一个名为“404”的线上聊天软件中，在一个名为“${group.name}”的群聊里进行角色扮演。请严格遵守以下所有规则：\n\n`;
@@ -8451,11 +7664,7 @@ ${DOMPurify.sanitize(m.content)}
 
             prompt += `1. **核心任务**: 你需要同时扮演这个群聊中的 **所有** AI 成员。我会作为唯一的人类用户（“我”，昵称：${group.me.nickname}）与你们互动。\n\n`;
             prompt += `2. **群聊成员列表**: 以下是你要扮演的所有角色以及我的信息：\n`;
-
-            // ▼▼▼ 修改：注入群聊用户本名 ▼▼▼
-            const myGroupRealName = group.me.realName ? `\n     - 我的真名: ${group.me.realName} (请记住我是谁)` : "";
-            prompt += `   - **我 (用户)**: \n     - 群内昵称: ${group.me.nickname}${myGroupRealName}\n     - 我的人设: ${group.me.persona || '无特定人设'}\n`;
-            // ▲▲▲ 修改结束 ▲▲▲
+            prompt += `   - **我 (用户)**: \n     - 群内昵称: ${group.me.nickname}\n     - 我的人设: ${group.me.persona || '无特定人设'}\n`;
             group.members.forEach(member => {
                 prompt += `   - **角色: ${member.realName} (AI)**\n`;
                 prompt += `     - 群内昵称: ${member.groupNickname}\n`;
@@ -8473,25 +7682,13 @@ ${DOMPurify.sanitize(m.content)}
             prompt += `   - \`[${group.me.nickname} 向 {某个成员真名} 转账：...]\`: 我给某个特定成员转账了。\n`;
             prompt += `   - \`[${group.me.nickname} 向 {某个成员真名} 送来了礼物：...]\`: 我给某个特定成员送了礼物。\n`;
             prompt += `   - \`[${group.me.nickname}的表情包：...]\`, \`[${group.me.nickname}的语音：...]\`, \`[${group.me.nickname}发来的照片/视频：...]\`: 我发送了特殊类型的消息，群成员可以对此发表评论。\n`;
-            prompt += `   - \`[system: ...]\`, \`[...邀请...加入了群聊]\`, \`[...修改群名为...]\`: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。\n`;
-            // ▼▼▼ 新增：群聊改昵称规则 ▼▼▼
-            prompt += `   - \`我修改我的群昵称为：{新昵称}\`: 我修改了自己在群里的昵称。\n`;
-            prompt += `   - \`[{成员真名}修改群昵称为：{新昵称}]\`: 群成员修改自己的群昵称。\n`;
-            prompt += `   - \`[{成员真名}修改群名为：{新群名}]\`: 群成员修改当前群聊的名称。\n\n`;
-            // ▲▲▲ 新增结束 ▲▲▲
-
-            prompt += `7. **修改群信息**: \n`;
-            prompt += `   - 群成员可以修改自己在群里的昵称。格式为：\`[{成员真名}修改群昵称为：{新昵称}]\`。\n`;
-            prompt += `   - 群成员也可以修改群聊的名称。格式为：\`[{成员真名}修改群名为：{新群名}]\`。\n`;
-            prompt += `   - 修改后，请立即适应新的设定进行后续对话。\n\n`;
+            prompt += `   - \`[system: ...]\`, \`[...邀请...加入了群聊]\`, \`[...修改群名为...]\`: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。\n\n`;
 
             let outputFormats = `
   - **普通消息**: \`[{成员真名}的消息：{消息内容}]\`
   - **表情包**: \`[{成员真名}发送的表情包：{表情包路径}]\`。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
   - **语音**: \`[{成员真名}的语音：{语音转述的文字}]\`
-  - **照片/视频**: \`[{成员真名}发来的照片/视频：{内容描述}]\`
-  - **修改昵称**: \`[{成员真名}修改群昵称为：{新昵称}]\`
-  - **修改群名**: \`[{成员真名}修改群名为：{新群名}]\``;
+  - **照片/视频**: \`[{成员真名}发来的照片/视频：{内容描述}]\``;
            
            const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
            if (allWorldBookContent.includes('<orange>')) {
@@ -8633,8 +7830,7 @@ ${loadedModules.map(m => `
                 });
 
                 if (chatType === 'private') {
-                    // 修改：使用新版环境感知提示函数（v2）
-                    systemPrompt = await generatePrivateSystemPrompt_v2(chat, worldBooksBefore, worldBooksAfter);
+                    systemPrompt = generatePrivateSystemPrompt(chat, worldBooksBefore, worldBooksAfter);
                 } else {
                     systemPrompt = generateGroupSystemPrompt(chat, worldBooksBefore, worldBooksAfter);
                 }
@@ -8689,7 +7885,7 @@ ${loadedModules.map(m => `
                                 replyText = String(content);
                             }
 
-                            const replyTextMatch = replyText.match(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/);
+                            const replyTextMatch = replyText.match(/\[.*?的消息(?:：|:)([\s\S]+?)\]/);
                             replyText = replyTextMatch ? replyTextMatch[1] : replyText;
                             
                             content = `[${myName}引用"${msg.quote.content.substring(0, 50)}..."并回复：${replyText}]`;
@@ -8851,7 +8047,7 @@ ${loadedModules.map(m => `
                         msgToWithdraw.originalContent = msgToWithdraw.content; // 备份原内容
 
                         // 3. 更新内容提示
-                        msgToWithdraw.content = `[${character.realName || character.name} 撤回了一条消息：${msgToWithdraw.content.replace(/\[.*?的消息\s*(?:：|:)\s*([\s\S]+?)\]/, '$1')}]`;
+                        msgToWithdraw.content = `[${character.realName || character.name} 撤回了一条消息：${msgToWithdraw.content.replace(/\[.*?的消息(?:：|:)([\s\S]+?)\]/, '$1')}]`;
 
                         // 4. 保存并刷新 UI
                         await saveData();
@@ -8861,68 +8057,6 @@ ${loadedModules.map(m => `
                         continue;
                     }
                     // 如果没找到可撤回的消息，就忽略这条指令
-                    continue;
-
-                // ▼▼▼ 新增：处理私聊 AI 修改自己的备注 ▼▼▼
-                } else if (item.key.includes('修改自己的备注为')) {
-                    const newRemark = item.content.trim();
-
-                    if (newRemark) {
-                        console.log(`[System] Char ${character.realName} renamed self to ${newRemark}`);
-
-                        // 更新数据库
-                        character.remarkName = newRemark;
-
-                        // 保存数据
-                        await saveData();
-
-                        // 更新UI：标题
-                        const chatRoomTitle = document.getElementById('chat-room-title');
-                        if (chatRoomTitle) chatRoomTitle.textContent = newRemark;
-
-                        // 构造一条系统提示消息展示给用户
-                        const sysMsgId = `msg_sys_rename_${Date.now()}`;
-                        const sysMsg = {
-                            id: sysMsgId,
-                            role: 'system', // 标记为系统消息
-                            content: `[system-display:${character.realName} 修改自己的备注为 "${newRemark}"]`,
-                            parts: [],
-                            timestamp: Date.now()
-                        };
-                        chat.history.push(sysMsg);
-                        addMessageBubble(sysMsg, targetChatId, targetChatType);
-
-                        // 刷新列表以显示新名字
-                        renderChatList();
-                    }
-                    // 不显示这条指令本身的气泡
-                    continue;
-
-                // ▼▼▼ 新增：处理私聊 AI 修改用户的备注 ▼▼▼
-                } else if (item.key.includes('修改你的备注为')) {
-                    const newMyName = item.content.trim();
-
-                    if (newMyName) {
-                        console.log(`[System] Char ${character.realName} renamed User to ${newMyName}`);
-
-                        // 更新数据库
-                        character.myName = newMyName;
-
-                        // 保存数据
-                        await saveData();
-
-                        // 构造系统提示
-                        const sysMsgId = `msg_sys_rename_user_${Date.now()}`;
-                        const sysMsg = {
-                            id: sysMsgId,
-                            role: 'system',
-                            content: `[system-display:${character.realName} 修改你的备注为 "${newMyName}"]`,
-                            parts: [],
-                            timestamp: Date.now()
-                        };
-                        chat.history.push(sysMsg);
-                        addMessageBubble(sysMsg, targetChatId, targetChatType);
-                    }
                     continue;
 
                 } else if (item.key === 'unknown') {
@@ -8955,96 +8089,6 @@ ${loadedModules.map(m => `
                     const senderName = group.members[0]?.groupNickname || '群成员';
                     senderId = group.members[0]?.id || null;
                     messageContent = `[${senderName}的消息：${item.content}]`;
-
-                // ▼▼▼ 新增：处理群聊 AI 成员修改群昵称 ▼▼▼
-                } else if (item.key.includes('修改群昵称为')) {
-                    // key 格式可能是 "Alice修改群昵称为"
-                    const nameMatch = item.key.match(/(.*?)修改群昵称为/);
-                    if (nameMatch && targetChatType === 'group') {
-                        const realName = nameMatch[1];
-                        const newNickname = item.content.trim();
-
-                        // 在群成员中查找
-                        const member = group.members.find(m => m.realName === realName);
-                        if (member) {
-                            const oldNickname = member.groupNickname;
-                            member.groupNickname = newNickname;
-
-                            console.log(`[System] Group member ${realName} renamed to ${newNickname}`);
-
-                            // 保存数据
-                            await saveData();
-
-                            // 构造系统提示
-                            const sysMsgId = `msg_sys_group_rename_${Date.now()}`;
-                            const sysMsg = {
-                                id: sysMsgId,
-                                role: 'system',
-                                content: `[system-display:"${oldNickname}" 修改群昵称为 "${newNickname}"]`,
-                                parts: [],
-                                timestamp: Date.now(),
-                                senderId: member.id // 关联到该成员
-                            };
-                            chat.history.push(sysMsg);
-                            addMessageBubble(sysMsg, targetChatId, targetChatType);
-
-                            // 刷新UI
-                            // 如果侧边栏开着，更新成员列表
-                            const groupSettingsSidebar = document.getElementById('group-settings-sidebar');
-                            if (groupSettingsSidebar.classList.contains('open')) {
-                                renderGroupMembersInSettings(group);
-                            }
-                            renderMessages(false, true); // 🔄 核心修复：强制重绘消息列表，让新昵称立即生效
-                        }
-                    }
-                    continue;
-
-                // ▼▼▼ 新增：处理群聊 AI 成员修改群名 ▼▼▼
-                } else if (item.key.includes('修改群名为')) {
-                    // key 格式: "Alice修改群名为"
-                    const nameMatch = item.key.match(/(.*?)修改群名为/);
-                    if (nameMatch && targetChatType === 'group') {
-                        const realName = nameMatch[1]; // 操作者的真名
-                        const newGroupName = item.content.trim();
-
-                        if (newGroupName) {
-                            // 找到操作者以获取其昵称（用于显示系统消息）
-                            const member = group.members.find(m => m.realName === realName);
-                            const operatorName = member ? member.groupNickname : (realName || '群成员');
-
-                            console.log(`[System] Group name changed to "${newGroupName}" by ${realName}`);
-
-                            // 1. 更新数据
-                            group.name = newGroupName;
-
-                            // 2. 保存数据
-                            await saveData();
-
-                            // 3. 构造系统提示消息
-                            const sysMsgId = `msg_sys_gname_${Date.now()}`;
-                            const sysMsg = {
-                                id: sysMsgId,
-                                role: 'system',
-                                content: `[system-display:"${operatorName}" 修改群名为 "${newGroupName}"]`,
-                                parts: [],
-                                timestamp: Date.now(),
-                                senderId: member ? member.id : null
-                            };
-                            chat.history.push(sysMsg);
-                            addMessageBubble(sysMsg, targetChatId, targetChatType);
-
-                            // 4. 实时更新 UI (标题栏)
-                            const chatRoomTitle = document.getElementById('chat-room-title');
-                            if (chatRoomTitle && currentChatId === group.id) {
-                                chatRoomTitle.textContent = newGroupName;
-                            }
-
-                            // 5. 刷新列表（更新左侧列表显示的群名）
-                            renderChatList();
-                        }
-                    }
-                    continue; // 跳过默认消息气泡生成
-                // ▲▲▲ 新增结束 ▲▲▲
 
                 } else {
                     // 默认消息: [眠眠的消息: ...]
@@ -9170,7 +8214,7 @@ ${loadedModules.map(m => `
 
                 // 检查是否为转账或礼物
                 if (targetChatType === 'private') {
-                    const receivedTransferRegex = new RegExp(`\\[${chat.realName}的转账\s*(?:：|:)\s*.*?元；备注：.*?\\]`);
+                    const receivedTransferRegex = new RegExp(`\\[${chat.realName}的转账(?:：|:).*?元；备注：.*?\\]`);
                     const giftRegex = new RegExp(`\\[${chat.realName}送来的礼物(?:：|:).*?\\]`);
                     if (receivedTransferRegex.test(message.content)) {
                         message.transferStatus = 'pending';
@@ -9958,38 +9002,6 @@ function renderStickerGrid() {
                 e.preventDefault();
                 sendMyGift(giftDescriptionInput.value.trim());
             });
-        }
-
-        // 应用日记独立字体
-        function applyDiaryFont(fontUrl) {
-            const styleId = 'diary-font-style';
-            let styleElement = document.getElementById(styleId);
-            if (!styleElement) {
-                styleElement = document.createElement('style');
-                styleElement.id = styleId;
-                document.head.appendChild(styleElement);
-            }
-
-            if (fontUrl) {
-                const fontName = 'DiaryCustomFont';
-                // 这里的关键是把 --diary-font-family 指向我们加载的自定义字体
-                styleElement.innerHTML = `
-                    @font-face {
-                        font-family: '${fontName}';
-                        src: url('${fontUrl}');
-                    }
-                    :root {
-                        --diary-font-family: '${fontName}', 'Georgia', 'Times New Roman', serif;
-                    }
-                `;
-            } else {
-                // 如果没有URL，恢复默认衬线体
-                styleElement.innerHTML = `
-                    :root {
-                        --diary-font-family: 'Georgia', 'Times New Roman', serif;
-                    }
-                `;
-            }
         }
 
         function setupFontSettingsApp() {
@@ -11499,31 +10511,66 @@ function renderStickerGrid() {
         function loadSettingsToSidebar() {
             const e = db.characters.find(e => e.id === currentChatId);
             if (e) {
-                // ▼▼▼ 新增：动态插入"角色本名"输入框 (放在备注名下方) ▼▼▼
-                const remarkInput = document.getElementById('setting-char-remark');
-                if (remarkInput) {
-                    const remarkGroup = remarkInput.closest('.form-group');
-                    // 检查是否已经插入过，避免重复
-                    if (remarkGroup && !document.getElementById('form-group-real-name')) {
-                        const realNameGroup = document.createElement('div');
-                        realNameGroup.className = 'form-group';
-                        realNameGroup.id = 'form-group-real-name';
-                        realNameGroup.innerHTML = `
-                            <hr style="border:none; border-top:1px solid #eee; margin: 15px 0 10px 0;">
-                            <label for="setting-char-real-name">角色本名 (AI认知的名字)</label>
-                            <input type="text" id="setting-char-real-name" placeholder="AI扮演时使用的真名">
-                        `;
-                        // 插入到"备注名"的下方
-                        remarkGroup.parentNode.insertBefore(realNameGroup, remarkGroup.nextSibling);
-                    }
-                    // 赋值
-                    const realNameEl = document.getElementById('setting-char-real-name');
-                    if (realNameEl) realNameEl.value = e.realName || '';
-                }
-                // ▲▲▲ 新增结束 ▲▲▲
-
                 document.getElementById('setting-char-avatar-preview').src = e.avatar;
                 document.getElementById('setting-char-remark').value = e.remarkName;
+                
+                // --- 动态添加 Minimax 语音合成设置 ---
+                let voiceIdGroup = document.getElementById('form-group-voice-id');
+                // 如果不存在则创建，防止重复添加
+                if (!voiceIdGroup) {
+                    voiceIdGroup = document.createElement('div');
+                    voiceIdGroup.id = 'form-group-voice-id';
+                    voiceIdGroup.innerHTML = `
+                        <div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 15px;">
+                            <div style="flex-grow: 1;">
+                                <label for="setting-char-voice-enabled" style="margin-bottom: 0; display: block; color: var(--secondary-color); font-weight: 600;">
+                                    启用语音合成
+                                </label>
+                                <p style="font-size: 13px; font-weight: normal; color: #666; margin-top: 8px; margin-bottom: 0; line-height: 1.5;">
+                                    开启后，点击语音消息可播放合成语音
+                                </p>
+                            </div>
+                            <label class="toggle-switch" style="margin-top: 5px;">
+                                <input type="checkbox" id="setting-char-voice-enabled">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group" id="voice-id-details" style="display: none;">
+                            <label for="setting-char-voice-id">Minimax Voice ID</label>
+                            <input type="text" id="setting-char-voice-id" placeholder="例如：male-qn-qingse">
+                        </div>
+                    `;
+                    
+                    // 插入到"角色备注"后面
+                    const remarkGroup = document.querySelector('label[for="setting-char-remark"]').parentNode;
+                    if (remarkGroup && remarkGroup.nextSibling) {
+                        remarkGroup.parentNode.insertBefore(voiceIdGroup, remarkGroup.nextSibling);
+                    }
+                    
+                    // 绑定开关事件
+                    const voiceEnabledSwitch = document.getElementById('setting-char-voice-enabled');
+                    const voiceIdDetails = document.getElementById('voice-id-details');
+                    if (voiceEnabledSwitch && voiceIdDetails) {
+                        voiceEnabledSwitch.addEventListener('change', (e) => {
+                            voiceIdDetails.style.display = e.target.checked ? 'block' : 'none';
+                        });
+                    }
+                }
+                // 回显数据
+                const voiceEnabledSwitch = document.getElementById('setting-char-voice-enabled');
+                const voiceIdDetails = document.getElementById('voice-id-details');
+                const voiceIdInput = document.getElementById('setting-char-voice-id');
+                if (voiceEnabledSwitch) {
+                    voiceEnabledSwitch.checked = e.minimaxVoiceEnabled || false;
+                }
+                if (voiceIdDetails) {
+                    voiceIdDetails.style.display = (e.minimaxVoiceEnabled) ? 'block' : 'none';
+                }
+                if (voiceIdInput) {
+                    voiceIdInput.value = e.minimaxVoiceId || '';
+                }
+                // --- 结束添加 ---
+                
                 document.getElementById('setting-char-persona').value = e.persona;
                 document.getElementById('setting-my-avatar-preview').src = e.myAvatar;
                 document.getElementById('setting-my-name').value = e.myName;
@@ -11539,351 +10586,7 @@ function renderStickerGrid() {
                 const theme = colorThemes[e.theme || 'white_pink'];
                 updateBubbleCssPreview(privatePreviewBox, e.customBubbleCss, !e.useCustomBubbleCss, theme);
                 populateBubblePresetSelect('bubble-preset-select');
-
-                // ▼▼▼ 新增：动态插入"我的本名"输入框 (在"我的人设"上方) ▼▼▼
-                const myPersonaInput = document.getElementById('setting-my-persona');
-                if (myPersonaInput) {
-                    const myPersonaGroup = myPersonaInput.closest('.form-group');
-                    if (myPersonaGroup && !document.getElementById('form-group-my-real-name')) {
-                        const myRealNameGroup = document.createElement('div');
-                        myRealNameGroup.className = 'form-group';
-                        myRealNameGroup.id = 'form-group-my-real-name';
-                        myRealNameGroup.innerHTML = `
-                            <label for="setting-my-real-name">我的本名</label>
-                            <input type="text" id="setting-my-real-name" placeholder="">
-                        `;
-                        // 插入到"我的人设"的上方
-                        myPersonaGroup.parentNode.insertBefore(myRealNameGroup, myPersonaGroup);
-                    }
-                    // 赋值
-                    const myRealNameEl = document.getElementById('setting-my-real-name');
-                    if (myRealNameEl) myRealNameEl.value = e.myRealName || '';
-                }
-                // ▲▲▲ 新增结束 ▲▲▲
-
-  
                 populateMyPersonaSelect();
-
-                // --- 动态添加 Minimax Voice ID 及高级设置 (UI 优化版) ---
-                // 1. 清理旧容器
-                const oldVoiceGroup = document.getElementById('form-group-voice-id');
-                if (oldVoiceGroup) oldVoiceGroup.remove();
-
-                const oldVoiceSettingsGroup = document.getElementById('form-group-voice-settings');
-                if (oldVoiceSettingsGroup) oldVoiceSettingsGroup.remove();
-
-                // 创建语音设置的容器
-                let voiceSettingsGroup = document.createElement('div');
-                voiceSettingsGroup.className = 'form-group';
-                voiceSettingsGroup.id = 'form-group-voice-settings';
-                
-                voiceSettingsGroup.innerHTML = `
-                    <!-- 语音启用开关 (可展开/隐藏下面的内容) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <label for="setting-char-voice-enabled" style="margin-bottom:0; color: var(--secondary-color); font-weight: 600;">启用语音生成</label>
-                        <label class="toggle-switch" style="margin-bottom: 0;">
-                            <input type="checkbox" id="setting-char-voice-enabled">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-
-                    <!-- 语音详细设置 (展开/隐藏区域) -->
-                    <div id="voice-details-panel" style="display:none; flex-direction:column; gap:12px; padding-top:8px; border-top:1px solid #f0f0f0; margin-top:8px; padding-top:12px;">
-                        
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label for="setting-char-voice-id" style="display:block; margin-bottom:6px; color:var(--secondary-color); font-weight:600; font-size:13px;">语音 ID</label>
-                            <input type="text" id="setting-char-voice-id" placeholder="例如：male-qn-qingse" 
-                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
-                        </div>
-
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label for="setting-char-voice-lang" style="display:block; margin-bottom:8px; color:var(--secondary-color); font-weight:600; font-size:13px;">识别语言/方言</label>
-                            <select id="setting-char-voice-lang" style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
-                                <option value="auto">自动识别 (Auto)</option>
-                                <option value="CN">中文 (Mandarin)</option>
-                                <option value="EN">英文 (English)</option>
-                                <option value="JP">日文 (Japanese)</option>
-                                <option value="KR">韩文 (Korean)</option>
-                                <option value="Cantonese">粤语 (Cantonese)</option>
-                                <option value="Taiwanese">台式国语 (Taiwanese)</option>
-                                <option value="Sichuanese">四川话 (Sichuanese)</option>
-                                <option value="Shanghainese">上海话 (Shanghainese)</option>
-                                <option value="MinNan">闽南语 (Min Nan)</option>
-                                <option value="DE">德语 (German)</option>
-                                <option value="FR">法语 (French)</option>
-                                <option value="ES">西班牙语 (Spanish)</option>
-                                <option value="RU">俄语 (Russian)</option>
-                            </select>
-                            <small style="font-size:12px; color:#999; margin-top:6px; display:block;">选择指定语言可让发音更地道，部分方言效果取决于模型能力。</small>
-                        </div>
-
-                    </div>
-                `;
-
-                // 4. 插入到 DOM 中 (插在"角色备注"后面)
-                const remarkGroup = document.querySelector('label[for="setting-char-remark"]').parentNode;
-                if (remarkGroup && remarkGroup.nextSibling) {
-                    remarkGroup.parentNode.insertBefore(voiceSettingsGroup, remarkGroup.nextSibling);
-                }
-
-                // 5. 回显数据
-                document.getElementById('setting-char-voice-id').value = e.minimaxVoiceId || '';
-                // 开关默认开启 (true)，如果是 undefined 也视为 true
-                const voiceEnabledCheckbox = document.getElementById('setting-char-voice-enabled');
-                const voiceDetailsPanel = document.getElementById('voice-details-panel');
-                
-                voiceEnabledCheckbox.checked = (e.minimaxEnabled !== false);
-                document.getElementById('setting-char-voice-lang').value = e.minimaxLang || 'auto';
-                
-                // 6. 添加展开/隐藏事件监听
-                voiceEnabledCheckbox.addEventListener('change', () => {
-                    voiceDetailsPanel.style.display = voiceEnabledCheckbox.checked ? 'flex' : 'none';
-                });
-                
-                // 初始状态：根据勾选状态显示/隐藏
-                voiceDetailsPanel.style.display = voiceEnabledCheckbox.checked ? 'flex' : 'none';
-                // --- 结束添加 ---
-
-                // ▼▼▼ 移动"我的昵称"输入框到语音设置上方 ▼▼▼
-                const myNameInput = document.getElementById('setting-my-name');
-                const voiceSettingsElement = document.getElementById('form-group-voice-settings');
-                if (myNameInput && voiceSettingsElement) {
-                    const myNameGroup = myNameInput.closest('.form-group');
-                    if (myNameGroup && myNameGroup.nextSibling !== voiceSettingsElement) {
-                        // 移动"我的昵称"到语音设置上方
-                        voiceSettingsElement.parentNode.insertBefore(myNameGroup, voiceSettingsElement);
-                    }
-                }
-                // ▲▲▲ 移动结束 ▲▲▲
-
-            // ==================================================
-            // 🌍 智能搜索 UI (下拉热门城市版)
-            // ==================================================
-            let envGroup = document.getElementById('form-group-env');
-            
-            // 1. 创建 DOM 结构
-            if (!envGroup) {
-                envGroup = document.createElement('div');
-                envGroup.className = 'form-group';
-                envGroup.id = 'form-group-env';
-                
-                envGroup.innerHTML = `
-                    <div style="height: 1px; background-color: #f0f0f0; margin: 15px 0;"></div>
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <label style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">环境感知 (时区/天气)</label>
-                        <label class="toggle-switch" style="margin-bottom: 0;">
-                            <input type="checkbox" id="setting-env-enabled">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    
-                    <div id="env-details-panel" style="display:none; flex-direction:column; gap:14px; padding-top:4px;">
-                        
-                        <div style="position:relative;" class="city-search-block">
-                            <label for="search-user-city" style="display:block; margin-bottom:6px; color:#666; font-size:13px;">👤 我的位置</label>
-                            <input type="text" id="search-user-city" placeholder="点击选择或输入城市..." autocomplete="off" 
-                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
-                            <ul id="results-user-city" class="city-results-list"></ul>
-                            <input type="hidden" id="data-user-city">
-                            <div id="display-user-city" style="font-size:12px; color:#d81b60; margin-top:6px; display:none; font-weight:500;">✓ 已选: <span style="font-weight:600;"></span></div>
-                        </div>
-
-                        <div style="position:relative;" class="city-search-block">
-                            <label for="search-ai-city" style="display:block; margin-bottom:6px; color:#666; font-size:13px;">🤖 TA的位置</label>
-                            <input type="text" id="search-ai-city" placeholder="点击选择或输入城市..." autocomplete="off"
-                                   style="width:100%; padding:10px 12px; border-radius:8px; border:2px solid #fce4ec; background-color:#fff; font-size:13px; box-sizing:border-box; font-family:inherit;">
-                            <ul id="results-ai-city" class="city-results-list"></ul>
-                            <input type="hidden" id="data-ai-city">
-                            <div id="display-ai-city" style="font-size:12px; color:#d81b60; margin-top:6px; display:none; font-weight:500;">✓ 已选: <span style="font-weight:600;"></span></div>
-                        </div>
-
-                    </div>
-                    <style>
-                        .city-results-list {
-                            display:none; 
-                            position:absolute; 
-                            top:calc(100% + 4px); 
-                            left:0; 
-                            right:0; 
-                            background:#fff; 
-                            border:1px solid #e0e0e0; 
-                            border-radius:8px; 
-                            max-height:220px; 
-                            overflow-y:auto; 
-                            z-index: 10005 !important;
-                            box-shadow:0 4px 12px rgba(0,0,0,0.15); 
-                            list-style:none; 
-                            padding:0; 
-                            margin:0;
-                        }
-                        .city-results-list li { 
-                            padding: 10px 12px; 
-                            font-size:13px; 
-                            cursor:pointer; 
-                            border-bottom:1px solid #f5f5f5; 
-                            color:#333; 
-                            font-family:inherit;
-                        }
-                        .city-results-list li:hover { 
-                            background:#fce4ec; 
-                            color:#d81b60;
-                            padding-left:16px; 
-                            transition: all 0.2s;
-                        }
-                        .city-results-list li.hot-city-label {
-                            background: #f9f9f9;
-                            color: #999;
-                            font-size: 12px;
-                            pointer-events: none;
-                            padding: 8px 12px;
-                            border-bottom: 1px solid #eee;
-                        }
-                        .search-loading { padding:12px; color:#999; font-size:12px; text-align:center; }
-                    </style>
-                `;
-
-                // 插入位置
-                const voiceSettingsGroup = document.getElementById('form-group-voice-settings');
-                if (voiceSettingsGroup && voiceSettingsGroup.parentNode) {
-                    voiceSettingsGroup.parentNode.insertBefore(envGroup, voiceSettingsGroup.nextSibling);
-                } else {
-                    const remarkGroup = document.querySelector('label[for="setting-char-remark"]').parentNode;
-                    if (remarkGroup) remarkGroup.parentNode.insertBefore(envGroup, remarkGroup.nextSibling);
-                }
-            }
-
-            // 2. 定义搜索逻辑 (热门城市 + 输入法防抖修复)
-            const bindSearchLogic = (inputId, resultsId, dataId, displayId, savedData) => {
-                const input = document.getElementById(inputId);
-                const results = document.getElementById(resultsId);
-                const hiddenData = document.getElementById(dataId);
-                const display = document.getElementById(displayId);
-                
-                // 🛑 状态标记：是否正在使用中文输入法
-                let isComposing = false;
-
-                // 热门城市数据
-                const HOT_CITIES = ["北京", "上海", "广州", "深圳", "东京", "纽约", "伦敦", "巴黎", "首尔", "曼谷", "洛杉矶", "新加坡"];
-
-                // 显示热门城市列表
-                const showHotCities = () => {
-                    results.innerHTML = '';
-                    results.style.display = 'block';
-                    
-                    const label = document.createElement('li');
-                    label.className = 'hot-city-label';
-                    label.style.cssText = "background:#f9f9f9; color:#999; font-size:12px; pointer-events:none; padding:8px 12px; border-bottom:1px solid #eee;";
-                    label.textContent = '🔥 热门城市 (支持中文直搜)';
-                    results.appendChild(label);
-
-                    HOT_CITIES.forEach(city => {
-                        const li = document.createElement('li');
-                        li.textContent = city;
-                        // 点击热门城市 -> 自动填入并搜索
-                        li.onclick = (e) => {
-                            e.stopPropagation(); 
-                            input.value = city;
-                            input.dispatchEvent(new Event('input')); 
-                        };
-                        results.appendChild(li);
-                    });
-                };
-
-                // 回显已保存的数据
-                if (savedData && savedData.name) {
-                    hiddenData.value = JSON.stringify(savedData);
-                    input.value = savedData.name; 
-                    display.style.display = 'block';
-                    display.querySelector('span').textContent = `${savedData.displayName}`;
-                }
-
-                // 聚焦时显示热门城市
-                input.onfocus = () => {
-                    if (!input.value.trim()) {
-                        showHotCities();
-                    } else if (results.children.length > 0) {
-                        results.style.display = 'block';
-                    }
-                };
-
-                // 🛑 监听输入法开始：比如你开始打 "dongjing"
-                input.addEventListener('compositionstart', () => {
-                    isComposing = true;
-                });
-
-                // 🛑 监听输入法结束：比如你按空格选定了 "东京"
-                input.addEventListener('compositionend', (ev) => {
-                    isComposing = false;
-                    // 选完词后，立刻触发一次搜索
-                    input.dispatchEvent(new Event('input'));
-                });
-
-                // 输入事件 (核心搜索逻辑)
-                input.oninput = debounce(async (ev) => {
-                    // 🛑 如果正在打拼音，不搜索！防止下拉框闪烁或消失
-                    if (isComposing) return;
-
-                    const query = ev.target.value.trim();
-                    
-                    if (query.length < 1) {
-                        showHotCities(); // 删空了就回退到热门列表
-                        return;
-                    }
-
-                    results.style.display = 'block';
-                    results.innerHTML = '<li class="search-loading">🔍 正在搜索...</li>';
-
-                    const cities = await GeoService.searchCity(query);
-                    
-                    // 防止网络回来时字已经删了
-                    if (input.value.trim().length < 1) {
-                        showHotCities();
-                        return;
-                    }
-
-                    results.innerHTML = ''; 
-                    
-                    if (cities.length === 0) {
-                        results.innerHTML = '<li class="search-loading">🤔 未找到匹配城市，请尝试英文名</li>';
-                    } else {
-                        cities.forEach(city => {
-                            const li = document.createElement('li');
-                            li.textContent = city.displayName;
-                            li.onclick = function(e) {
-                                e.stopPropagation();
-                                input.value = city.name;
-                                hiddenData.value = JSON.stringify(city);
-                                display.style.display = 'block';
-                                display.querySelector('span').textContent = city.displayName;
-                                results.style.display = 'none';
-                            };
-                            results.appendChild(li);
-                        });
-                    }
-                }, 500); // 500ms 防抖
-            };
-
-            // 3. 激活逻辑
-            const envSwitch = document.getElementById('setting-env-enabled');
-            const envPanel = document.getElementById('env-details-panel');
-
-            // 开关控制
-            envSwitch.checked = !!e.envAwarenessEnabled;
-            envPanel.style.display = e.envAwarenessEnabled ? 'flex' : 'none';
-            envSwitch.onclick = () => { envPanel.style.display = envSwitch.checked ? 'flex' : 'none'; };
-
-            // 绑定两个搜索框 (传入之前的存档数据)
-            bindSearchLogic('search-user-city', 'results-user-city', 'data-user-city', 'display-user-city', e.userCityObj);
-            bindSearchLogic('search-ai-city', 'results-ai-city', 'data-ai-city', 'display-ai-city', e.aiCityObj);
-
-            // 全局点击关闭逻辑
-            window.onclick = (event) => {
-                if (!event.target.closest('.city-search-block')) {
-                    document.getElementById('results-user-city').style.display = 'none';
-                    document.getElementById('results-ai-city').style.display = 'none';
-                }
-            };
             }
 
         }
@@ -11892,49 +10595,18 @@ function renderStickerGrid() {
             const e = db.characters.find(e => e.id === currentChatId);
             if (e) {
                 e.avatar = document.getElementById('setting-char-avatar-preview').src;
-
-                // ▼▼▼ 新增：保存角色本名 ▼▼▼
-                const realNameInput = document.getElementById('setting-char-real-name');
-                if (realNameInput) e.realName = realNameInput.value.trim();
-                // ▲▲▲ 新增结束 ▲▲▲
-
                 e.remarkName = document.getElementById('setting-char-remark').value;
+                const voiceEnabledSwitch = document.getElementById('setting-char-voice-enabled');
+                e.minimaxVoiceEnabled = voiceEnabledSwitch ? voiceEnabledSwitch.checked : false;
+                e.minimaxVoiceId = document.getElementById('setting-char-voice-id') ? document.getElementById('setting-char-voice-id').value.trim() : '';
                 e.persona = document.getElementById('setting-char-persona').value;
                 e.myAvatar = document.getElementById('setting-my-avatar-preview').src;
                 e.myName = document.getElementById('setting-my-name').value;
-
-                // ▼▼▼ 新增：保存我的本名 ▼▼▼
-                const myRealNameInput = document.getElementById('setting-my-real-name');
-                if (myRealNameInput) e.myRealName = myRealNameInput.value.trim();
-                // ▲▲▲ 新增结束 ▲▲▲
-
                 e.myPersona = document.getElementById('setting-my-persona').value;
                 e.theme = document.getElementById('setting-theme-color').value;
                 e.maxMemory = document.getElementById('setting-max-memory').value;
                 e.useCustomBubbleCss = document.getElementById('setting-use-custom-css').checked;
                 e.customBubbleCss = document.getElementById('setting-custom-bubble-css').value;
-
-                // 保存 Minimax 相关设置
-                e.minimaxVoiceId = document.getElementById('setting-char-voice-id').value.trim();
-                e.minimaxEnabled = document.getElementById('setting-char-voice-enabled').checked;
-                e.minimaxLang = document.getElementById('setting-char-voice-lang').value;
-
-                // --- 保存环境设置 ---
-                e.envAwarenessEnabled = document.getElementById('setting-env-enabled').checked;
-                
-                try {
-                    // 读取隐藏域中的 JSON 字符串
-                    const userData = document.getElementById('data-user-city').value;
-                    const aiData = document.getElementById('data-ai-city').value;
-                    
-                    e.userCityObj = userData ? JSON.parse(userData) : null;
-                    e.aiCityObj = aiData ? JSON.parse(aiData) : null;
-                    
-                    console.log("环境设置已保存:", e.userCityObj, e.aiCityObj);
-                } catch(err) {
-                    console.error("保存城市数据出错:", err);
-                }
-
                 await saveData();
                 showToast('设置已保存！');
                 chatRoomTitle.textContent = e.remarkName;
@@ -11958,14 +10630,32 @@ function renderStickerGrid() {
             if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
 
             // 回显 Minimax 设置
+            const minimaxSwitch = document.getElementById('minimax-switch');
+            const minimaxDetailsDiv = document.getElementById('minimax-details');
             if (db.apiSettings) {
                 const mmGroupInput = document.getElementById('minimax-group-id');
                 const mmKeyInput = document.getElementById('minimax-api-key');
                 const mmModelSelect = document.getElementById('minimax-model');
-
+                
+                // 回显开关状态
+                if (minimaxSwitch) {
+                    minimaxSwitch.checked = db.apiSettings.minimaxEnabled || false;
+                }
+                // 控制详细设置的显示
+                if (minimaxDetailsDiv) {
+                    minimaxDetailsDiv.style.display = (db.apiSettings.minimaxEnabled) ? 'block' : 'none';
+                }
+                
                 if (mmGroupInput) mmGroupInput.value = db.apiSettings.minimaxGroupId || '';
                 if (mmKeyInput) mmKeyInput.value = db.apiSettings.minimaxApiKey || '';
                 if (mmModelSelect) mmModelSelect.value = db.apiSettings.minimaxModel || 'speech-01';
+            }
+            
+            // 绑定 Minimax 开关事件
+            if (minimaxSwitch && minimaxDetailsDiv) {
+                minimaxSwitch.addEventListener('change', (e) => {
+                    minimaxDetailsDiv.style.display = e.target.checked ? 'block' : 'none';
+                });
             }
 
             // --- NovelAI 初始化 ---
@@ -11986,18 +10676,6 @@ function renderStickerGrid() {
                 novelaiModelSelect.value = novelaiModel;
             }
             // --- NovelAI 初始化结束 ---
-
-            // 回显后台频率设置
-            if (db.bgActivitySettings) {
-                document.getElementById('bg-freq-high').value = db.bgActivitySettings.high || 60;
-                document.getElementById('bg-freq-medium').value = db.bgActivitySettings.medium || 180;
-                document.getElementById('bg-freq-low').value = db.bgActivitySettings.low || 480;
-            }
-
-            // 绑定打开管理界面的按钮
-            document.getElementById('open-bg-activity-manager')?.addEventListener('click', () => {
-                setupBackgroundActivitySystem(); // 打开弹窗
-            });
 
             populateApiSelect();
             n.addEventListener('change', () => {
@@ -12033,8 +10711,9 @@ function renderStickerGrid() {
             e.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 if (!a.value) return showToast('请选择模型后保存！');
-
+                
                 // 获取 Minimax 设置
+                const minimaxEnabled = document.getElementById('minimax-switch').checked;
                 const minimaxGroupId = document.getElementById('minimax-group-id').value.trim();
                 const minimaxApiKey = document.getElementById('minimax-api-key').value.trim();
                 const minimaxModel = document.getElementById('minimax-model').value;
@@ -12046,19 +10725,11 @@ function renderStickerGrid() {
                     model: a.value,
                     timePerceptionEnabled: document.getElementById('time-perception-switch').checked,
                     // 新增 Minimax 设置
+                    minimaxEnabled: minimaxEnabled,
                     minimaxGroupId: minimaxGroupId,
                     minimaxApiKey: minimaxApiKey,
                     minimaxModel: minimaxModel
                 };
-
-                // 保存后台频率
-                db.bgActivitySettings = {
-                    high: parseInt(document.getElementById('bg-freq-high').value) || 60,
-                    medium: parseInt(document.getElementById('bg-freq-medium').value) || 180,
-                    low: parseInt(document.getElementById('bg-freq-low').value) || 480,
-                    enabled: true
-                };
-
                 await saveData();
                 showToast('API设置已保存！')
             });
@@ -12456,55 +11127,6 @@ function renderStickerGrid() {
                 createMemberForGroupModal.classList.add('visible');
                 addMemberActionSheet.classList.remove('visible');
             });
-
-            // ▼▼▼ 新增：踢出群成员逻辑 ▼▼▼
-            const kickMemberBtn = document.getElementById('kick-group-member-btn');
-            if (kickMemberBtn) {
-                kickMemberBtn.addEventListener('click', async () => {
-                    const memberId = document.getElementById('editing-member-id').value;
-                    const group = db.groups.find(g => g.id === currentChatId);
-                    if (!group || !memberId) return;
-
-                    const memberIndex = group.members.findIndex(m => m.id === memberId);
-                    if (memberIndex > -1) {
-                        const memberName = group.members[memberIndex].groupNickname;
-
-                        if (confirm(`确定要把 "${memberName}" 移出群聊吗？`)) {
-                            // 1. 移除成员
-                            group.members.splice(memberIndex, 1);
-
-                            // 2. 添加系统消息
-                            const sysMsg = {
-                                id: `msg_sys_${Date.now()}`,
-                                role: 'system',
-                                content: `[system-display:${group.me.nickname} 将 ${memberName} 移出了群聊]`,
-                                parts: [],
-                                timestamp: Date.now(),
-                                senderId: 'user_me' // 视为用户操作
-                            };
-                            // 上下文消息给AI看
-                            const contextMsg = {
-                                id: `msg_ctx_${Date.now()}`,
-                                role: 'user',
-                                content: `[system: ${group.me.nickname} 将 ${memberName} 移出了群聊]`,
-                                parts: [{type: 'text', text: `[system: ${group.me.nickname} 将 ${memberName} 移出了群聊] `}],
-                                timestamp: Date.now(),
-                                senderId: 'user_me'
-                            };
-
-                            group.history.push(sysMsg, contextMsg);
-
-                            // 3. 保存并刷新
-                            await saveData();
-                            renderGroupMembersInSettings(group); // 刷新成员列表
-                            renderMessages(false, true); // 刷新消息视图
-                            editGroupMemberModal.classList.remove('visible'); // 关闭弹窗
-                            showToast(`${memberName} 已被移出群聊`);
-                        }
-                    }
-                });
-            }
-            // ▲▲▲ 新增结束 ▲▲▲
             document.getElementById('create-group-member-avatar-preview').addEventListener('click', () => {
                 document.getElementById('create-group-member-avatar-upload').click();
             });
@@ -12654,27 +11276,6 @@ function renderStickerGrid() {
             updateBubbleCssPreview(groupPreviewBox, group.customBubbleCss, !group.useCustomBubbleCss, theme);
             populateBubblePresetSelect('group-bubble-preset-select');
 
-            // ▼▼▼ 新增：群聊-动态插入"我的本名"输入框 (在"我的群人设"上方) ▼▼▼
-            const groupMyPersonaInput = document.getElementById('setting-group-my-persona');
-            if (groupMyPersonaInput) {
-                const groupMyPersonaGroup = groupMyPersonaInput.closest('.form-group');
-                if (groupMyPersonaGroup && !document.getElementById('form-group-group-my-real-name')) {
-                    const realNameGroup = document.createElement('div');
-                    realNameGroup.className = 'form-group';
-                    realNameGroup.id = 'form-group-group-my-real-name';
-                    realNameGroup.innerHTML = `
-                        <label for="setting-group-my-real-name">我的本名</label>
-                        <input type="text" id="setting-group-my-real-name" placeholder="">
-                    `;
-                    // 插入到"我的人设"的上方
-                    groupMyPersonaGroup.parentNode.insertBefore(realNameGroup, groupMyPersonaGroup);
-                }
-                // 赋值
-                const realNameEl = document.getElementById('setting-group-my-real-name');
-                if (realNameEl) realNameEl.value = group.me.realName || '';
-            }
-            // ▲▲▲ 新增结束 ▲▲▲
-
             // [新增] 为群聊"主题颜色"下拉框添加 change 事件监听
             const groupThemeSelect = document.getElementById('setting-group-theme-color');
             if (groupThemeSelect) {
@@ -12735,12 +11336,6 @@ function renderStickerGrid() {
             group.avatar = document.getElementById('setting-group-avatar-preview').src;
             group.me.avatar = document.getElementById('setting-group-my-avatar-preview').src;
             group.me.nickname = document.getElementById('setting-group-my-nickname').value;
-
-            // ▼▼▼ 新增：保存群聊我的本名 ▼▼▼
-            const groupRealNameInput = document.getElementById('setting-group-my-real-name');
-            if (groupRealNameInput) group.me.realName = groupRealNameInput.value.trim();
-            // ▲▲▲ 新增结束 ▲▲▲
-
             group.me.persona = document.getElementById('setting-group-my-persona').value;
             group.theme = document.getElementById('setting-group-theme-color').value;
             group.maxMemory = document.getElementById('setting-group-max-memory').value;
@@ -12802,7 +11397,7 @@ function renderStickerGrid() {
 
         function sendRenameNotification(group, newName) {
             const myName = group.me.nickname;
-            const messageContent = `[${myName}修改群名为\s*(?:：|:)\s*${newName}]`;
+            const messageContent = `[${myName}修改群名为：${newName}]`;
             const message = {
                 id: `msg_${Date.now()}`,
                 role: 'user',
@@ -15184,7 +13779,6 @@ renderAiWalletTransactions(generatedData.transactions);
                 tutorialContentArea.appendChild(item);
             });
 
-            // 添加更新日志
             renderUpdateLog();
 
             // --- 新增：备份数据按钮 ---
@@ -15435,1283 +14029,5 @@ renderAiWalletTransactions(generatedData.transactions);
             document.body.removeChild(a);
         }
 
-      // ==========================================
-    // 📔 复古日记本 App (Diary System)
-    // ==========================================
-
-    // --- 辅助函数：调用AI识别图片内容 ---
-    async function analyzeImageContent(base64Data) {
-        const { url, key, model, provider } = db.apiSettings;
-        if (!url || !key || !model) return null;
-
-        // 构造 Vision API 请求 (兼容 OpenAI/Claude/Gemini 格式)
-        // 这里以 OpenAI 格式为例，大多数中转商都支持
-        const requestBody = {
-            model: model,
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: "请用简短的一句话描述这张图片的内容，用于日记配图说明。格式：[图片内容：xxx]。" },
-                        { type: "image_url", image_url: { url: base64Data } }
-                    ]
-                }
-            ],
-            max_tokens: 100
-        };
-
-        // Gemini 的格式略有不同，做个简单适配
-        if (provider === 'gemini') {
-            // Gemini 格式适配逻辑略，为保持代码简洁，假设用户使用兼容 OpenAI 格式的 API 或中转
-            // 如果是原生 Gemini，需要在这里转换 parts 结构
-        }
-
-        try {
-            const response = await fetch(`${url}/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) return null;
-            const data = await response.json();
-            return data.choices[0].message.content;
-        } catch (e) {
-            console.error("图片识别失败:", e);
-            return null;
-        }
-      }
-
-    function setupDiaryApp() {
-    let currentEditingDiaryId = null;
-    let currentTab = 'my'; // 'my' or 'received'
-
-    const diaryScreen = document.getElementById('diary-screen');
-    const editorScreen = document.getElementById('diary-editor-screen');
-    const readScreen = document.getElementById('diary-read-screen');
-
-    const diaryList = document.getElementById('diary-list');
-    const createBtn = document.getElementById('create-diary-btn');
-    const tabs = document.querySelectorAll('.diary-tab');
-
-    // Editor Elements
-    const closeEditorBtn = document.getElementById('close-diary-editor-btn');
-    const saveDiaryBtn = document.getElementById('save-diary-btn');
-    const titleInput = document.getElementById('diary-title-input');
-    const contentEditor = document.getElementById('diary-content-editor');
-    const editorDate = document.getElementById('diary-editor-date');
-    const toolbarBtns = document.querySelectorAll('.diary-toolbar .tool-btn');
-    const colorInput = document.getElementById('diary-color-input');
-    const imgInput = document.getElementById('diary-img-input');
-    const exchangeBtn = document.getElementById('exchange-diary-btn');
-    const paperContainer = document.getElementById('diary-paper-container');
-    const bgBtn = document.getElementById('diary-bg-btn');
-
-    // Exchange Modal
-    const exchangeModal = document.getElementById('exchange-select-modal');
-    const confirmExchangeBtn = document.getElementById('confirm-exchange-btn');
-    const randomExchangeBtn = document.getElementById('random-exchange-btn');
-    const charSelect = document.getElementById('exchange-char-select');
-
-    // Read Screen Elements
-    const closeReadBtn = document.getElementById('close-diary-read-btn');
-    const deleteDiaryBtn = document.getElementById('delete-current-diary-btn');
-
-      // --- 日历功能模块 开始 ---
-    let calCurrentDate = new Date();
-    const calendarGrid = document.getElementById('diary-calendar-grid');
-    const monthYearDisplay = document.getElementById('cal-month-year');
-    const summaryContainer = document.getElementById('diary-day-summary-container');
-
-    // 渲染日历
-    function renderCalendar() {
-        calendarGrid.innerHTML = '';
-        const year = calCurrentDate.getFullYear();
-        const month = calCurrentDate.getMonth();
-
-        // 更新标题
-        monthYearDisplay.textContent = `${year}年 ${month + 1}月`;
-
-        // 获取当月第一天是周几
-        const firstDayIndex = new Date(year, month, 1).getDay();
-        // 获取当月总天数
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        // 1. 填充空白 (上个月的余部)
-        for (let i = 0; i < firstDayIndex; i++) {
-            const emptyDiv = document.createElement('div');
-            emptyDiv.className = 'cal-day empty';
-            calendarGrid.appendChild(emptyDiv);
-        }
-
-        // 2. 填充日期
-        for (let day = 1; day <= daysInMonth; day++) {
-            const dayEl = document.createElement('div');
-            dayEl.className = 'cal-day';
-            dayEl.textContent = day;
-
-            // 检查这一天是否有日记
-            const checkDateStr = `${year}/${month + 1}/${day}`;
-            // 查找是否有这一天的日记 (任何一篇)
-            const hasDiary = db.diaries.some(d => {
-                const dDate = new Date(d.timestamp);
-                return dDate.getFullYear() === year &&
-                       dDate.getMonth() === month &&
-                       dDate.getDate() === day;
-            });
-
-            if (hasDiary) {
-                dayEl.classList.add('has-diary');
-            }
-
-            // 选中状态 (如果是今天，默认不选中，只有点击才选中；或者默认选中今天)
-            // 这里逻辑是：点击后添加 active
-            dayEl.addEventListener('click', () => {
-                // 移除其他 active
-                document.querySelectorAll('.cal-day').forEach(el => el.classList.remove('active'));
-                dayEl.classList.add('active');
-                renderDaySummary(year, month, day);
-            });
-
-            calendarGrid.appendChild(dayEl);
-        }
-    }
-
-    // 渲染选中日期的"揉皱纸条"
-    function renderDaySummary(year, month, day) {
-        summaryContainer.innerHTML = '';
-        summaryContainer.style.display = 'none';
-
-        // 找到当天的所有日记
-        const dayDiaries = db.diaries.filter(d => {
-            const dDate = new Date(d.timestamp);
-            return dDate.getFullYear() === year &&
-                   dDate.getMonth() === month &&
-                   dDate.getDate() === day;
-        });
-
-        if (dayDiaries.length === 0) {
-            // 如果没日记，也可以显示一句提示，或者直接不显示容器
-            // 这里选择不显示容器，保持简洁
-            return;
-        }
-
-        summaryContainer.style.display = 'block';
-
-        dayDiaries.forEach(diary => {
-            // 1. 用户的日记纸条 (上)
-            const userStrip = document.createElement('div');
-            userStrip.className = 'crumpled-strip user-strip';
-            const timeStr = new Date(diary.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-            // 提取纯文本预览
-            const cleanContent = diary.content.replace(/<[^>]+>/g, '').trim();
-            const firstSentence = cleanContent.split(/[。！？.!?]/)[0] || cleanContent;
-
-            userStrip.innerHTML = `
-                <div class="strip-meta">
-                    <span>${timeStr}</span>
-                    <span>By Me</span>
-                </div>
-                <div class="strip-title">${diary.title}</div>
-                <div class="strip-preview">${firstSentence}...</div>
-            `;
-            userStrip.addEventListener('click', () => openReader(diary));
-            summaryContainer.appendChild(userStrip);
-
-            // 2. AI的回信纸条 (下，如果有)
-            if (diary.exchangeStatus === 'replied' && diary.replyContent) {
-                const aiStrip = document.createElement('div');
-                aiStrip.className = 'crumpled-strip ai-strip';
-
-                // 获取AI名字 (缓存中找，或者显示默认)
-                const char = db.characters.find(c => c.id === diary.replyCharId);
-                const charName = char ? char.remarkName : 'Ta';
-
-                const cleanReply = diary.replyContent.replace(/<[^>]+>/g, '').trim();
-                const firstReplySentence = cleanReply.split(/[。！？.!?]/)[0] || cleanReply;
-
-                aiStrip.innerHTML = `
-                    <div class="strip-meta">
-                        <span>回信</span>
-                        <span>From ${charName}</span>
-                    </div>
-                    <div class="strip-title">Re: ${diary.title}</div>
-                    <div class="strip-preview">${firstReplySentence}...</div>
-                `;
-                // 点击AI纸条也是打开同一篇日记的阅读器
-                aiStrip.addEventListener('click', () => openReader(diary));
-                summaryContainer.appendChild(aiStrip);
-            }
-        });
-    }
-
-    // 绑定翻页按钮
-    document.getElementById('cal-prev-btn').addEventListener('click', () => {
-        calCurrentDate.setMonth(calCurrentDate.getMonth() - 1);
-        renderCalendar();
-        summaryContainer.style.display = 'none'; // 翻页时隐藏摘要
     });
-
-    document.getElementById('cal-next-btn').addEventListener('click', () => {
-        calCurrentDate.setMonth(calCurrentDate.getMonth() + 1);
-        renderCalendar();
-        summaryContainer.style.display = 'none';
-    });
-
-    // 初始渲染
-    renderCalendar();
-    // --- 日历功能模块 结束 ---
-
-    // 1. Tab Switching
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            currentTab = tab.dataset.type;
-            renderDiaryList();
-        });
-    });
-
-    // 2. Open Editor (Create New)
-    createBtn.addEventListener('click', () => {
-        // ▼▼▼ 新增：限制一天只能写一篇 ▼▼▼
-        const now = new Date();
-        // 获取今天的日期字符串 (例如 "Fri Nov 24 2025")
-        const todayStr = now.toDateString();
-
-        // 在数据库中查找是否已有今天的日记
-        const hasDiaryToday = db.diaries.some(d => {
-            return new Date(d.timestamp).toDateString() === todayStr;
-        });
-
-        if (hasDiaryToday) {
-            return showToast('一天只能写一篇日记哦，去列表里看看今天的记录吧。');
-        }
-        // ▲▲▲ 新增结束 ▲▲▲
-
-        currentEditingDiaryId = null;
-        openEditor();
-    });
-
-    // 3. Close Editor
-    closeEditorBtn.addEventListener('click', () => {
-        if(confirm('确定要放弃当前的编辑吗？')) {
-            switchScreen('diary-screen');
-        }
-    });
-
-    // ==========================
-    // 🚑【修复白屏】新增：阅读页返回按钮逻辑
-    // ==========================
-    if (closeReadBtn) {
-        closeReadBtn.addEventListener('click', () => {
-            // 返回日记列表页
-            renderDiaryList(); // 刷新列表以显示最新状态
-            switchScreen('diary-screen');
-        });
-    }
-    // ==========================
-
-    // 4. Toolbar Actions
-    toolbarBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const cmd = btn.dataset.cmd;
-            if (cmd) {
-                e.preventDefault(); // Prevent losing focus
-                if (cmd === 'insertUnorderedList') {
-                    // Insert custom Todo item
-                    document.execCommand('insertHTML', false, '<div class="diary-todo-item">新待办事项</div>');
-                } else {
-                    document.execCommand(cmd, false, null);
-                }
-            } else if (btn.id === 'diary-color-btn') {
-                colorInput.click();
-            } else if (btn.id === 'diary-img-btn') {
-                imgInput.click();
-            }
-        });
-    });
-
-    // ▼▼▼ 新增：日记字体设置按钮事件绑定 ▼▼▼
-    const diaryFontBtn = document.getElementById('diary-font-set-btn');
-    if (diaryFontBtn) {
-        diaryFontBtn.addEventListener('click', async () => {
-            // 这里简单起见使用 prompt，你也可以做一个像全局设置那样的弹窗
-            const currentUrl = db.diaryFontUrl || '';
-            const newUrl = prompt('请输入日记本专用的字体URL (TTF/WOFF)\n留空则恢复默认衬线体:', currentUrl);
-
-            if (newUrl !== null) { // 用户没有点取消
-                db.diaryFontUrl = newUrl.trim();
-                await saveData(); // 保存到全局设置
-                applyDiaryFont(db.diaryFontUrl); // 立即应用
-                showToast('日记字体已更新');
-            }
-        });
-    }
-
-    // 字体大小调节功能
-    let currentDiaryFontSize = parseInt(localStorage.getItem('diaryFontSize')) || 17;
-
-    // 应用当前字体大小
-    function applyDiaryFontSize(size) {
-        document.documentElement.style.setProperty('--diary-font-size', size + 'px');
-        currentDiaryFontSize = size;
-        localStorage.setItem('diaryFontSize', size);
-    }
-
-    // 初始化字体大小
-    applyDiaryFontSize(currentDiaryFontSize);
-
-    // 字体增大按钮
-    const fontIncreaseBtn = document.getElementById('diary-font-size-increase-btn');
-    if (fontIncreaseBtn) {
-        fontIncreaseBtn.addEventListener('click', () => {
-            if (currentDiaryFontSize < 30) { // 最大30px
-                applyDiaryFontSize(currentDiaryFontSize + 2);
-                showToast(`字体大小: ${currentDiaryFontSize}px`);
-            } else {
-                showToast('字体已达到最大');
-            }
-        });
-    }
-
-    // 字体减小按钮
-    const fontDecreaseBtn = document.getElementById('diary-font-size-decrease-btn');
-    if (fontDecreaseBtn) {
-        fontDecreaseBtn.addEventListener('click', () => {
-            if (currentDiaryFontSize > 12) { // 最小12px
-                applyDiaryFontSize(currentDiaryFontSize - 2);
-                showToast(`字体大小: ${currentDiaryFontSize}px`);
-            } else {
-                showToast('字体已达到最小');
-            }
-        });
-    }
-
-    // 文本对齐功能（循环切换）
-    const alignBtn = document.getElementById('diary-align-btn');
-    const alignments = ['left', 'center', 'right'];
-    const alignIcons = ['⬅', '☰', '➡'];
-    const alignNames = ['左对齐', '居中对齐', '右对齐'];
-    let currentAlignIndex = 0;
-
-    if (alignBtn) {
-        alignBtn.addEventListener('click', () => {
-            // 切换到下一个对齐方式
-            currentAlignIndex = (currentAlignIndex + 1) % alignments.length;
-            const newAlignment = alignments[currentAlignIndex];
-
-            // 执行对齐命令
-            document.execCommand(`justify${newAlignment.charAt(0).toUpperCase() + newAlignment.slice(1)}`);
-
-            // 更新按钮图标
-            alignBtn.querySelector('span').textContent = alignIcons[currentAlignIndex];
-
-            // 更新提示文字
-            alignBtn.title = `文本对齐 - ${alignNames[currentAlignIndex]}`;
-
-            showToast(`已切换：${alignNames[currentAlignIndex]}`);
-        });
-    }
-
-    // 工具栏滑动检测和边缘提示
-    function checkToolbarScrollable() {
-        const toolbar = document.querySelector('.diary-toolbar');
-        if (toolbar) {
-            // 检查工具栏是否可滚动
-            const isScrollable = toolbar.scrollWidth > toolbar.clientWidth;
-
-            if (isScrollable) {
-                toolbar.classList.add('scrollable');
-            } else {
-                toolbar.classList.remove('scrollable');
-            }
-        }
-    }
-
-    // 窗口大小改变时重新检测
-    window.addEventListener('resize', checkToolbarScrollable);
-
-    // DOM加载完成后检测
-    setTimeout(checkToolbarScrollable, 100);
-
-    // Color Picker
-    colorInput.addEventListener('input', (e) => {
-        document.execCommand('foreColor', false, e.target.value);
-    });
-
-    // Image Upload (Updated for Collage Style V2)
-    imgInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                const url = await compressImage(file, { quality: 0.7, maxWidth: 600 });
-                const rotation = (Math.random() * 6 - 3).toFixed(1);
-                // 默认样式：拍立得，z-index: 1，无位移
-                const imgHtml = `<img src="${url}" class="img-style-polaroid" style="transform: rotate(${rotation}deg) translate(0px, 0px); z-index: 1; max-width: 80%;" alt="拼贴照片">`;
-
-                document.execCommand('insertHTML', false, imgHtml);
-                document.execCommand('insertHTML', false, '<br><br>'); // 换行防粘连
-
-            } catch (err) {
-                console.error(err);
-                showToast('图片插入失败');
-            }
-        }
-        e.target.value = null;
-    });
-
-    // --- 📝 经典信纸切换逻辑 (Classic Paper Switcher) ---
-
-    // 定义三种基础样式
-    const classicPatterns = [
-        { name: '横线信纸', style: 'linear-gradient(#e1e1e1 1px, transparent 1px)', size: '100% 30px' },
-        { name: '点阵笔记', style: 'radial-gradient(#d2d2d2 1px, transparent 1px)', size: '20px 20px' },
-        { name: '纯白画纸', style: 'none', size: 'auto' }
-    ];
-    let currentPatternIndex = 0;
-
-    // 点击按钮：切换基础样式
-    bgBtn.addEventListener('click', () => {
-        // 1. 如果当前正在使用自定义背景，先清除自定义，恢复到默认样式
-        if (currentCustomBgUrl) {
-            applyCustomBackground(null);
-            showToast('已恢复默认信纸');
-            return;
-        }
-
-        // 2. 循环切换样式
-        currentPatternIndex = (currentPatternIndex + 1) % classicPatterns.length;
-        const nextPattern = classicPatterns[currentPatternIndex];
-
-        // 3. 应用样式
-        paperContainer.style.backgroundImage = nextPattern.style;
-        paperContainer.style.backgroundSize = nextPattern.size;
-
-        showToast(`已切换：${nextPattern.name}`);
-    });
-
-    // --- 🆕 自定义背景逻辑 (Custom Background) ---
-    const customBgInput = document.getElementById('diary-custom-bg-upload');
-    let currentCustomBgUrl = null; // 临时存储当前的自定义背景
-
-    // 辅助函数：应用自定义背景
-    function applyCustomBackground(url) {
-        if (!url) {
-            // 如果 url 为空，说明是移除自定义背景
-            paperContainer.style.backgroundImage = ''; // 清空内联样式
-            paperContainer.classList.remove('custom-bg-active');
-            currentCustomBgUrl = null;
-            // 恢复当前的样式
-            const currentPattern = classicPatterns[currentPatternIndex] || classicPatterns[0];
-            paperContainer.style.backgroundImage = currentPattern.style;
-            paperContainer.style.backgroundSize = currentPattern.size;
-            return;
-        }
-
-        // 应用新背景
-        currentCustomBgUrl = url;
-        // 1. 清除类名，防止颜色干扰
-        paperContainer.className = 'diary-paper';
-        // 2. 添加纯净模式类
-        paperContainer.classList.add('custom-bg-active');
-        // 3. 设置背景图
-        paperContainer.style.backgroundImage = `url('${url}')`;
-    }
-
-    // 处理文件上传
-    customBgInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                showToast('正在处理背景图...');
-                // 稍微压缩一下背景图，最大宽度1080即可
-                const url = await compressImage(file, { quality: 0.8, maxWidth: 1080 });
-                applyCustomBackground(url);
-                showToast('自定义背景已应用 (无滤镜模式)');
-            } catch (err) {
-                showToast('图片处理失败');
-            }
-        }
-        e.target.value = null;
-    });
-
-    // 为信纸按钮添加【右键/长按】菜单
-    const handleBgBtnLongPress = (e) => {
-        e.preventDefault(); // 阻止默认菜单
-        e.stopPropagation();
-
-        // 调用你现有的 createContextMenu 函数
-        createContextMenu([
-            {
-                label: '🖼️ 上传本地图片',
-                action: () => customBgInput.click()
-            },
-            {
-                label: '🔗 输入图片链接',
-                action: () => {
-                    const url = prompt("请输入图片 URL:");
-                    if (url && url.trim()) {
-                        applyCustomBackground(url.trim());
-                    }
-                }
-            },
-            {
-                label: '🔙 恢复默认信纸',
-                action: () => applyCustomBackground(null) // 传 null 恢复
-            }
-        ], e.clientX, e.clientY);
-    };
-
-    // 绑定右键 (PC)
-    bgBtn.addEventListener('contextmenu', handleBgBtnLongPress);
-
-    // 绑定长按 (Mobile)
-    let bgBtnTimer;
-    bgBtn.addEventListener('touchstart', (e) => {
-        bgBtnTimer = setTimeout(() => {
-            const touch = e.touches[0];
-            // 伪造一个类似鼠标事件的对象传给 handleBgBtnLongPress
-            handleBgBtnLongPress({
-                preventDefault: () => e.preventDefault(),
-                stopPropagation: () => e.stopPropagation(),
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-        }, 500); // 500ms 长按
-    });
-    bgBtn.addEventListener('touchend', () => clearTimeout(bgBtnTimer));
-    bgBtn.addEventListener('touchmove', () => clearTimeout(bgBtnTimer));
-
-    // 修改：点击按钮时，如果有自定义背景，先清除自定义背景，再切换学院颜色
-    const originalBgBtnClick = bgBtn.onclick;
-    bgBtn.addEventListener('click', () => {
-        if (currentCustomBgUrl) {
-            applyCustomBackground(null); // 先清除自定义
-            return; // 这一次点击只做清除，不切换颜色
-        }
-        // 执行原有的切换逻辑
-        if (originalBgBtnClick) originalBgBtnClick();
-    });
-
-    // 5. Save Diary
-    // 5. Save Diary (Updated with Image Recognition)
-    saveDiaryBtn.addEventListener('click', async () => {
-        const title = titleInput.value.trim() || '无标题';
-
-        // --- 📷 图片识别逻辑开始 ---
-        // 获取编辑器内所有图片
-        const images = contentEditor.querySelectorAll('img');
-        let hasNewAnalysis = false;
-
-        if (images.length > 0) {
-            // 检查是否有未识别的图片 (没有 alt 属性或者 alt 为空的)
-            const unanalyzedImages = Array.from(images).filter(img => !img.alt || !img.alt.startsWith('[图片内容'));
-
-            if (unanalyzedImages.length > 0) {
-                showToast(`正在识别 ${unanalyzedImages.length} 张图片，请稍候...`);
-                saveDiaryBtn.disabled = true; // 防止重复点击
-
-                // 遍历识别
-                for (let img of unanalyzedImages) {
-                    const desc = await analyzeImageContent(img.src);
-                    if (desc) {
-                        img.alt = desc; // ★★★ 核心：将描述存入 alt 属性
-                        hasNewAnalysis = true;
-                    }
-                }
-                saveDiaryBtn.disabled = false;
-                if (hasNewAnalysis) showToast('图片识别完成！');
-            }
-        }
-        // --- 📷 图片识别逻辑结束 ---
-
-        const content = contentEditor.innerHTML; // 此时 innerHTML 里的 img 标签已经带有 alt 了
-        const date = new Date();
-
-        const diaryData = {
-            id: currentEditingDiaryId || `diary_${Date.now()}`,
-            title: title,
-            content: content,
-            timestamp: currentEditingDiaryId ? undefined : Date.now(),
-            updatedAt: Date.now(),
-            // 新增：保存当前基础样式索引
-            patternIndex: currentPatternIndex,
-            // 新增：保存自定义背景URL
-            customBg: currentCustomBgUrl || null,
-            // 保留兼容性：旧的背景样式
-            bgStyle: paperContainer.style.backgroundImage,
-            bgSize: paperContainer.style.backgroundSize,
-            exchangeStatus: 'draft'
-        };
-
-        if (currentEditingDiaryId) {
-            const idx = db.diaries.findIndex(d => d.id === currentEditingDiaryId);
-            if (idx > -1) {
-                // 保留原有的 exchangeStatus 和 reply 信息
-                const original = db.diaries[idx];
-                // 如果原来是 'sent' 或 'replied'，修改后重置为 'draft' 允许重新发送吗？
-                // 这里假设修改后还是保持原状态，除非是显式的新日记
-                // 为了简单，我们保持原状态，除非是显式的新日记
-                db.diaries[idx] = { ...original, ...diaryData, exchangeStatus: original.exchangeStatus, timestamp: original.timestamp };
-            }
-        } else {
-            db.diaries.push(diaryData);
-        }
-
-        await saveData();
-        showToast('日记已保存');
-        renderDiaryList();
-        switchScreen('diary-screen');
-
-        // 🎉 新增：保存后提供随机交换选项（仅对新日记有效）
-        if (!currentEditingDiaryId) {
-            const chars = db.characters.filter(c => c.id.startsWith('char_'));
-            if (chars.length > 0) {
-                setTimeout(() => {
-                    const randomChar = chars[Math.floor(Math.random() * chars.length)];
-                    if (confirm(`💌 要不要把这篇日记随机交换给${randomChar.remarkName}？\n\n点击"确定"发送给随机角色，点击"取消"稍后自己选择。`)) {
-                        sendDiaryToChar(diaryData, randomChar.id);
-                    }
-                }, 800);
-            }
-        }
-    });
-
-    // 6. Render List
-    function renderDiaryList() {
-        diaryList.innerHTML = '';
-        const filteredDiaries = db.diaries.filter(d => {
-            if (currentTab === 'my') return true; // Show all my diaries (including exchanged ones)
-            if (currentTab === 'received') return d.exchangeStatus === 'replied';
-            return true;
-        }).sort((a, b) => b.timestamp - a.timestamp);
-
-        if (filteredDiaries.length === 0) {
-            document.getElementById('no-diary-placeholder').style.display = 'block';
-        } else {
-            document.getElementById('no-diary-placeholder').style.display = 'none';
-            filteredDiaries.forEach(diary => {
-                const li = document.createElement('li');
-                li.className = 'diary-list-item';
-                const date = new Date(diary.timestamp);
-                const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
-
-                let badge = '';
-                if (diary.exchangeStatus === 'sent') badge = '<span class="diary-status-badge">漂流中...</span>';
-                if (diary.exchangeStatus === 'replied') badge = '<span class="diary-status-badge replied">已收到回信</span>';
-
-                // 为未交换的日记添加快捷交换按钮
-                let quickExchangeBtn = '';
-                if (diary.exchangeStatus === 'draft') {
-                    const chars = db.characters.filter(c => c.id.startsWith('char_'));
-                    if (chars.length > 0) {
-                        quickExchangeBtn = `<button class="quick-exchange-btn" title="随机交换给角色">🎲</button>`;
-                    }
-                }
-
-                li.innerHTML = `
-                    ${badge}
-                    <div class="diary-item-main">
-                        <div class="diary-item-date">${dateStr}</div>
-                        <div class="diary-item-title">${diary.title}</div>
-                        <div class="diary-item-preview">${diary.content.replace(/<[^>]+>/g, '')}</div>
-                    </div>
-                    ${quickExchangeBtn}
-                `;
-
-                // 主内容区域点击打开日记
-                li.querySelector('.diary-item-main').addEventListener('click', () => openReader(diary));
-
-                // 快捷交换按钮点击事件
-                const quickBtn = li.querySelector('.quick-exchange-btn');
-                if (quickBtn) {
-                    quickBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const chars = db.characters.filter(c => c.id.startsWith('char_'));
-                        const randomChar = chars[Math.floor(Math.random() * chars.length)];
-                        if (confirm(`🎲 随机把这篇日记交换给${randomChar.remarkName}？`)) {
-                            sendDiaryToChar(diary, randomChar.id);
-                        }
-                    });
-                }
-                diaryList.appendChild(li);
-            });
-        }
-
-        // ▼▼▼ 新增：列表更新时同步刷新日历 ▼▼▼
-        renderCalendar();
-    }
-
-    // 7. Open Editor
-    function openEditor(diary = null) {
-        if (diary) {
-            currentEditingDiaryId = diary.id;
-            titleInput.value = diary.title;
-            contentEditor.innerHTML = diary.content;
-            // --- 优化：生成更适合圆形邮戳的日期格式 ---
-            const now = new Date(diary.timestamp);
-            const yyyy = now.getFullYear();
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-
-            // 使用 HTML 换行，将日期分为三部分显示
-            // 效果：
-            //  2025
-            // NOV.23
-            // POST
-            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-            const enMonth = monthNames[now.getMonth()];
-
-            // 这里插入 HTML
-            editorDate.innerHTML = `
-                <div style="font-size:10px; transform:scale(0.9);">${yyyy}</div>
-                <div style="font-size:16px; margin: 2px 0;">${enMonth}.${dd}</div>
-                <div style="font-size:9px; letter-spacing:2px;">POST</div>
-            `;
-            // 1. 先重置状态
-            paperContainer.className = 'diary-paper default-paper';
-            paperContainer.style.backgroundImage = '';
-            currentCustomBgUrl = null;
-
-            // 2. 优先处理自定义背景
-            if (diary.customBg) {
-                applyCustomBackground(diary.customBg);
-                // 即使是自定义背景，也记录一下原来的样式索引，以防用户点击"恢复"
-                currentPatternIndex = diary.patternIndex || 0;
-            } else {
-                // 3. 如果没有自定义背景，应用保存的基础样式
-                currentCustomBgUrl = null;
-                paperContainer.classList.remove('custom-bg-active');
-
-                currentPatternIndex = (diary.patternIndex !== undefined) ? diary.patternIndex : 0;
-                const pattern = classicPatterns[currentPatternIndex] || classicPatterns[0];
-
-                paperContainer.style.backgroundImage = pattern.style;
-                paperContainer.style.backgroundSize = pattern.size;
-            }
-
-            // If already sent, hide exchange button to prevent double sending
-            if (diary.exchangeStatus !== 'draft') {
-                document.querySelector('.diary-bottom-actions').style.display = 'none';
-            } else {
-                document.querySelector('.diary-bottom-actions').style.display = 'block';
-            }
-        } else {
-            // New Diary
-            currentEditingDiaryId = null;
-            titleInput.value = '';
-            contentEditor.innerHTML = '';
-            // --- 新建日记时也使用邮戳格式 ---
-            const nowNew = new Date();
-            const yyyyNew = nowNew.getFullYear();
-            const ddNew = String(nowNew.getDate()).padStart(2, '0');
-            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-            const enMonthNew = monthNames[nowNew.getMonth()];
-
-            editorDate.innerHTML = `
-                <div style="font-size:10px; transform:scale(0.9);">${yyyyNew}</div>
-                <div style="font-size:16px; margin: 2px 0;">${enMonthNew}.${ddNew}</div>
-                <div style="font-size:9px; letter-spacing:2px;">POST</div>
-            `;
-
-            // --- 新建日记：重置为默认（横线） ---
-            currentCustomBgUrl = null;
-            paperContainer.classList.remove('custom-bg-active');
-            currentPatternIndex = 0;
-            paperContainer.style.backgroundImage = classicPatterns[0].style;
-            paperContainer.style.backgroundSize = classicPatterns[0].size;
-
-            document.querySelector('.diary-bottom-actions').style.display = 'none'; // Must save first
-        }
-        switchScreen('diary-editor-screen');
-    }
-
-    // 8. Open Reader
-    function openReader(diary) {
-        document.getElementById('read-diary-title').textContent = diary.title;
-        document.getElementById('read-diary-date').textContent = new Date(diary.timestamp).toLocaleString();
-        document.getElementById('read-diary-author').textContent = 'By Me';
-
-        const contentDiv = document.getElementById('read-diary-content');
-        contentDiv.innerHTML = diary.content;
-
-        // Apply background style and theme
-        const paper = document.getElementById('diary-read-paper');
-
-        // 先重置状态
-        paper.className = 'diary-paper';
-        paper.style.backgroundImage = '';
-
-        if (diary.customBg) {
-            // 阅读模式也应用纯净样式
-            paper.classList.add('custom-bg-active');
-            paper.style.backgroundImage = `url('${diary.customBg}')`;
-        } else {
-            // 读取保存的样式索引
-            const idx = (diary.patternIndex !== undefined) ? diary.patternIndex : 0;
-            const pattern = classicPatterns[idx] || classicPatterns[0];
-
-            paper.style.backgroundImage = pattern.style;
-            paper.style.backgroundSize = pattern.size;
-        }
-
-        // Show Reply if exists
-        const replySection = document.getElementById('read-diary-reply-section');
-        if (diary.exchangeStatus === 'replied' && diary.replyContent) {
-            replySection.style.display = 'block';
-            const char = db.characters.find(c => c.id === diary.replyCharId);
-            document.getElementById('reply-avatar').src = char ? char.avatar : 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
-            document.getElementById('reply-name').textContent = char ? char.remarkName : '神秘人';
-            document.getElementById('reply-content').innerHTML = diary.replyContent;
-        } else {
-            replySection.style.display = 'none';
-        }
-
-        // Handle Delete
-        deleteDiaryBtn.onclick = async () => {
-            if(confirm('确定删除这篇日记吗？')) {
-                db.diaries = db.diaries.filter(d => d.id !== diary.id);
-                await saveData();
-                renderDiaryList();
-
-                // 🗓️ 刷新日历和便签显示
-                renderCalendar();
-                const summaryContainer = document.getElementById('diary-day-summary-container');
-                if (summaryContainer) {
-                    summaryContainer.innerHTML = '';
-                    summaryContainer.style.display = 'none';
-                }
-
-                switchScreen('diary-screen');
-            }
-        };
-
-        // Allow edit if draft
-        if (diary.exchangeStatus === 'draft') {
-             contentDiv.onclick = () => openEditor(diary);
-             contentDiv.title = "点击编辑";
-             contentDiv.style.cursor = "text";
-        } else {
-             contentDiv.onclick = null;
-             contentDiv.title = "";
-             contentDiv.style.cursor = "default";
-        }
-
-        switchScreen('diary-read-screen');
-    }
-
-    // 9. Exchange Logic
-    function openExchangeModal(diary) {
-        // Populate Select
-        charSelect.innerHTML = '';
-        const chars = db.characters.filter(c => c.id.startsWith('char_')); // Only private chars
-        if (chars.length === 0) {
-            charSelect.innerHTML = '<option>暂无联系人</option>';
-            confirmExchangeBtn.disabled = true;
-        } else {
-            confirmExchangeBtn.disabled = false;
-            chars.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = c.remarkName;
-                charSelect.appendChild(opt);
-            });
-        }
-        exchangeModal.classList.add('visible');
-
-        confirmExchangeBtn.onclick = async () => {
-            const charId = charSelect.value;
-            if (!charId) return;
-            await sendDiaryToChar(diary, charId);
-        };
-
-        randomExchangeBtn.onclick = async () => {
-            if (chars.length === 0) return;
-            const randomChar = chars[Math.floor(Math.random() * chars.length)];
-            await sendDiaryToChar(diary, randomChar.id);
-        };
-    }
-
-    async function sendDiaryToChar(diary, charId) {
-        exchangeModal.classList.remove('visible');
-        showToast('日记已寄出，正在等待回信...');
-
-        // Update status locally
-        diary.exchangeStatus = 'sent';
-        await saveData();
-        renderDiaryList(); // Update UI
-        switchScreen('diary-screen');
-
-        // Trigger AI Generation
-        const char = db.characters.find(c => c.id === charId);
-        if (!char) return;
-
-        try {
-            const replyContent = await generateAiDiaryReply(char, diary);
-
-            // Update Diary with Reply
-            diary.exchangeStatus = 'replied';
-            diary.replyContent = replyContent;
-            diary.replyCharId = charId;
-            diary.replyTimestamp = Date.now();
-
-            // Send notification toast
-            showToast({
-                avatar: char.avatar,
-                name: char.remarkName,
-                message: `回赠了一篇日记给你`
-            });
-
-            await saveData();
-            renderDiaryList();
-
-        } catch (error) {
-            console.error('Diary exchange failed:', error);
-            showToast('对方似乎很忙，没有回信 (生成失败)');
-            diary.exchangeStatus = 'draft'; // Revert
-            await saveData();
-        }
-    }
-
-    async function generateAiDiaryReply(char, userDiary) {
-        const { url, key, model } = db.apiSettings;
-        if (!url || !key || !model) throw new Error("API not configured");
-
-        // --- 📷 解析日记内容 (包含图片描述) ---
-        let rawContent = userDiary.content;
-
-        // 1. 先把 img 标签替换成它的 alt 文本
-        // 正则含义：找到所有 img 标签，提取 alt 属性的值
-        rawContent = rawContent.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n【用户附图：$1】\n');
-
-        // 2. 再清除其他 HTML 标签
-        const cleanUserContent = rawContent.replace(/<[^>]+>/g, '\n').trim();
-        // --- 解析结束 ---
-
-        // 1. 检查 NovelAI 开关状态
-        const isNaiEnabled = localStorage.getItem('novelai-enabled') === 'true';
-
-        // ▼▼▼ 新增：读取过往日记记忆 (同步到日记生成) ▼▼▼
-        const pastDiaries = (db.diaries || [])
-            .filter(d => d.exchangeStatus === 'replied' && d.replyCharId === char.id && d.id !== userDiary.id) // 排除当前这一篇
-            .sort((a, b) => b.timestamp - a.timestamp) // 倒序，最新的在前
-            .slice(0, 3) // 取最近3篇
-            .map(d => {
-                const cleanReply = d.replyContent.replace(/<[^>]+>/g, '').substring(0, 150);
-                return `- 之前的回信摘要: "${cleanReply}..."`;
-            })
-            .join('\n');
-
-        let memoryContext = "";
-        if (pastDiaries) {
-            memoryContext = `\n为了保持连贯性，请参考你之前写给我的日记片段：\n${pastDiaries}\n`;
-        }
-        // ▲▲▲ 新增结束 ▲▲▲
-
-        // 2. 动态构建 Prompt
-        let prompt = `你现在正在进行"交换日记"活动。
-你的角色是：${char.realName}。
-人设：${char.persona}。
-${memoryContext}
-你收到了一篇来自用户（${char.myName}）的日记：
-=== 用户日记开始 ===
-标题：${userDiary.title}
-内容：
-${cleanUserContent}
-=== 用户日记结束 ===
-
-任务：请你写一篇**你自己的日记**作为回信。
-要求：
-1. **排版精美**：必须使用HTML格式输出。使用 <h3> 作为小标题，<p> 分段。可以使用 <span style="color:#8B4513">...</span> 来改变重点文字颜色（使用复古色系如深褐、墨绿、酒红）。
-2. **内容侧重**：
-   - 70% 描写你今天的生活、工作、学习、遇到的趣事、碎碎念或胡思乱想。内容必须极其贴合你的人设，展现你独立的生活轨迹，不要三句不离用户。
-   - 30% 对用户日记内容的自然回应、共鸣或安慰。
-3. **风格**：复古、优雅、真诚、有着信纸般的质感。文笔要好，拒绝流水账。`;
-
-        // ★★★ 关键修改：只有开启了开关，才教AI生成图片 ★★★
-        if (isNaiEnabled) {
-            prompt += `
-4. **配图**：你可以插入一张照片来展示你的生活。
-   - 如果你想分享照片，请在HTML中插入：\`[NAI: {"prompt": "英文画面描述..."}]\`。系统会自动将其替换为图片。
-   - 画面描述必须详细、唯美，符合你的生活场景。`;
-        } else {
-            prompt += `
-4. **纯文字**：请专注于文字描写，不要尝试发送图片。`;
-        }
-
-        prompt += `
-5. **直接输出HTML**，不要包含 \`\`\`html 标记。`;
-
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-            body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.85
-            })
-        });
-
-        const data = await response.json();
-        let content = data.choices[0].message.content;
-
-        // Clean markdown blocks if any
-        content = content.replace(/^```html|```$/g, '').trim();
-
-        // Handle NAI Generation
-        if (content.includes('[NAI:')) {
-            const naiMatch = content.match(/\[NAI:\s*({.*?})\]/);
-
-            // 再次检查开关（双重保险）
-            if (naiMatch && isNaiEnabled) {
-                try {
-                    const json = JSON.parse(naiMatch[1]);
-                    // Generate Image
-                    const imgData = await generateNovelAIImageForChat(json.prompt, char.id, 'private');
-                    // Replace tag with img
-                    const imgHtml = `<img src="${imgData.imageUrl}" alt="Life Photo" style="max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); margin: 15px 0;">`;
-                    content = content.replace(naiMatch[0], imgHtml);
-                } catch (e) {
-                    console.error('Diary Image Gen Failed:', e);
-                    // ★★★ 关键修改：生成失败时的提示 ★★★
-                    content = content.replace(naiMatch[0], '<p style="color:#999; font-size:12px; text-align:center;">(照片好像没夹稳，掉落了...)</p>');
-                    // 弹出Toast提醒用户
-                    showToast('日记配图生成失败，请检查魔法或NAI设置');
-                }
-            } else {
-                // Remove tag if NAI disabled
-                content = content.replace(/\[NAI:.*?\]/, '');
-            }
-        }
-
-        return content;
-    }
-
-    // --- 图片拼贴编辑逻辑 (Collage Logic V2) ---
-    const imageToolbar = document.getElementById('diary-image-toolbar');
-    const sizeSlider = document.getElementById('img-size-slider');
-    const rotateSlider = document.getElementById('img-rotate-slider');
-    const xSlider = document.getElementById('img-x-slider'); // 新增
-    const ySlider = document.getElementById('img-y-slider'); // 新增
-    const zSlider = document.getElementById('img-z-slider'); // 新增
-    const imgDeleteBtn = document.getElementById('img-delete-btn');
-    const diaryBottomActions = document.querySelector('.diary-bottom-actions');
-    const styleBtns = document.querySelectorAll('.style-btn');
-
-    let selectedDiaryImage = null;
-
-    // 1. 监听编辑器点击
-    contentEditor.addEventListener('click', (e) => {
-        if (e.target.tagName === 'IMG') {
-            e.stopPropagation();
-            selectImage(e.target);
-        } else {
-            deselectImage();
-        }
-    });
-
-    // 2. 选中图片
-    function selectImage(img) {
-        if (selectedDiaryImage) selectedDiaryImage.classList.remove('img-selected');
-        selectedDiaryImage = img;
-        selectedDiaryImage.classList.add('img-selected');
-
-        // --- 回显数据 ---
-        // 大小
-        let currentWidth = selectedDiaryImage.style.maxWidth || '90%';
-        sizeSlider.value = parseInt(currentWidth);
-
-        // 变换 (Transform): 解析 rotate, translateX, translateY
-        // 格式可能是: "rotate(5deg) translate(10px, 20px)"
-        const transform = selectedDiaryImage.style.transform || '';
-
-        // 解析旋转
-        const rotateMatch = transform.match(/rotate\(([-\d.]+)deg\)/);
-        rotateSlider.value = rotateMatch ? parseFloat(rotateMatch[1]) : 0;
-
-        // 解析位移
-        const translateMatch = transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
-        if (translateMatch) {
-            xSlider.value = parseFloat(translateMatch[1]);
-            ySlider.value = parseFloat(translateMatch[2]);
-        } else {
-            xSlider.value = 0;
-            ySlider.value = 0;
-        }
-
-        // 解析层级 (Z-index)
-        // 默认zIndex为空，设为1
-        zSlider.value = selectedDiaryImage.style.zIndex || 1;
-
-        updateActiveStyleBtn();
-
-        if(diaryBottomActions) diaryBottomActions.style.display = 'none';
-        imageToolbar.style.display = 'flex';
-    }
-
-    // 3. 取消选中
-    function deselectImage() {
-        if (selectedDiaryImage) {
-            selectedDiaryImage.classList.remove('img-selected');
-            selectedDiaryImage = null;
-        }
-        imageToolbar.style.display = 'none';
-        if (currentEditingDiaryId && diaryBottomActions) {
-            diaryBottomActions.style.display = 'block';
-        }
-    }
-
-    // 4. 统一更新 Transform 的函数
-    function updateImageTransform() {
-        if (!selectedDiaryImage) return;
-        const r = rotateSlider.value;
-        const x = xSlider.value;
-        const y = ySlider.value;
-        // 组合变换字符串
-        selectedDiaryImage.style.transform = `rotate(${r}deg) translate(${x}px, ${y}px)`;
-    }
-
-    // 5. 绑定滑块事件
-    sizeSlider.addEventListener('input', (e) => {
-        if (selectedDiaryImage) selectedDiaryImage.style.maxWidth = e.target.value + '%';
-    });
-
-    rotateSlider.addEventListener('input', updateImageTransform);
-    xSlider.addEventListener('input', updateImageTransform);
-    ySlider.addEventListener('input', updateImageTransform);
-
-    // 层级控制
-    zSlider.addEventListener('input', (e) => {
-        if (selectedDiaryImage) {
-            // 注意：要让z-index生效，position必须是relative/absolute (已在CSS中设为relative)
-            selectedDiaryImage.style.zIndex = e.target.value;
-        }
-    });
-
-    // 6. 风格切换
-    styleBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            if (!selectedDiaryImage) return;
-            const newStyle = e.currentTarget.dataset.style;
-            const styleClassName = `img-style-${newStyle}`;
-
-            // 移除旧的所有 img-style- 开头的类
-            selectedDiaryImage.className = selectedDiaryImage.className.replace(/\bimg-style-\S+/g, '');
-            // 添加新类
-            selectedDiaryImage.classList.add(styleClassName);
-            // 补回选中状态
-            selectedDiaryImage.classList.add('img-selected');
-
-            updateActiveStyleBtn();
-        });
-    });
-
-    function updateActiveStyleBtn() {
-        if (!selectedDiaryImage) return;
-        styleBtns.forEach(btn => {
-            btn.classList.remove('active');
-            const styleName = btn.dataset.style;
-            if (selectedDiaryImage.classList.contains(`img-style-${styleName}`)) {
-                btn.classList.add('active');
-            }
-        });
-    }
-
-    // 7. 删除
-    imgDeleteBtn.addEventListener('click', () => {
-        if (selectedDiaryImage) {
-            selectedDiaryImage.remove();
-            deselectImage();
-        }
-    });
-
-    // Handle Todo List Clicks (Event Delegation)
-    document.body.addEventListener('click', (e) => {
-        if (e.target.classList.contains('diary-todo-item')) {
-            e.target.classList.toggle('checked');
-        }
-    });
-
-    // 火漆印章功能
-    const waxSealBtn = document.getElementById('waxSealBtn');
-
-    if (waxSealBtn) {
-        waxSealBtn.addEventListener('click', async function() {
-            // 添加点击动画
-            this.classList.add('seal-pressed');
-
-            // 创建火漆盖章效果
-            const paperContainer = document.querySelector('.diary-paper-container');
-            const sealEffect = document.createElement('div');
-            sealEffect.className = 'seal-effect';
-            sealEffect.innerHTML = `
-                <div class="wax-drop"></div>
-                <div class="seal-mark"></div>
-            `;
-
-            // 将盖章效果添加到纸张容器
-            paperContainer.appendChild(sealEffect);
-
-            // 播放盖章动画
-            setTimeout(() => {
-                sealEffect.classList.add('seal-impression');
-            }, 100);
-
-            // 添加震动反馈
-            if (navigator.vibrate) {
-                navigator.vibrate(200);
-            }
-
-            // 播放音效
-            playSealSound();
-
-            // 触发保存按钮点击
-            setTimeout(() => {
-                const saveBtn = document.getElementById('save-btn');
-                if (saveBtn) {
-                    saveBtn.click();
-                }
-                showNotification('日记已用火漆印章密封！', 'success');
-                // 移除盖章效果
-                setTimeout(() => {
-                    sealEffect.remove();
-                }, 2000);
-            }, 800);
-
-            // 移除按钮按下状态
-            setTimeout(() => {
-                this.classList.remove('seal-pressed');
-            }, 600);
-        });
-    }
-
-    // 播放印章音效
-    function playSealSound() {
-        try {
-            // 使用Web Audio API创建印章音效
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
-
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-        } catch (error) {
-            console.log('音效播放失败:', error);
-        }
-    }
-
-} // 🟢 结束 setupDiaryApp 函数
-
-}); // 🟢 结束 document.addEventListener('DOMContentLoaded' ...
 
